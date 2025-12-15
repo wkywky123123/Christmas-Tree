@@ -9,7 +9,7 @@ import { generateTreePositions, randomVector } from '../utils/geometry';
 interface MagicTreeProps {
   appState: AppState;
   photos: string[];
-  handPos: { x: number; y: number; z: number };
+  handPosRef: React.MutableRefObject<{ x: number; y: number; z: number }>;
   isGrabbing: boolean;
   onPhotoSelect: (index: number) => void;
 }
@@ -17,7 +17,7 @@ interface MagicTreeProps {
 export const MagicTree: React.FC<MagicTreeProps> = ({ 
   appState, 
   photos, 
-  handPos, 
+  handPosRef, 
   isGrabbing, 
   onPhotoSelect 
 }) => {
@@ -47,6 +47,9 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
 
   useFrame((state, delta) => {
     if (!meshRef.current) return;
+    
+    // Read hand position from ref
+    const handPos = handPosRef.current;
 
     const targetLerp = appState === AppState.TREE ? 0 : 1;
     currentLerp.current += (targetLerp - currentLerp.current) * delta * 2; 

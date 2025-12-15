@@ -9,7 +9,7 @@ import { AppState } from '../types';
 interface SceneProps {
   appState: AppState;
   photos: string[];
-  handPos: { x: number; y: number; z: number };
+  handPosRef: React.MutableRefObject<{ x: number; y: number; z: number }>;
   isGrabbing: boolean;
   onPhotoSelect: (index: number) => void;
 }
@@ -44,12 +44,12 @@ export const Scene: React.FC<SceneProps> = (props) => {
           angle={0.5} 
           penumbra={1} 
           intensity={2} 
-          color="#FFF" 
-          castShadow
+          color="#FFF"
+          // castShadow={false} // Shadows are expensive, disabled for performance
         />
 
         {/* Post Processing for Glow */}
-        <EffectComposer disableNormalPass>
+        <EffectComposer enableNormalPass={false}>
           <Bloom 
             luminanceThreshold={0.5} 
             mipmapBlur 

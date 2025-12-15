@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FilesetResolver, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import { AppState } from '../types';
 
@@ -12,30 +12,86 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loaded, setLoaded] = useState(false);
+  const [isMirrored, setIsMirrored] = useState(true); // Default to mirrored (selfie mode)
+  
+  // Dragging State
+  const [position, setPosition] = useState({ x: window.innerWidth - 280, y: 16 }); // Initial top-rightish
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const initialPosRef = useRef({ x: 0, y: 0 });
+
   const lastStateRef = useRef<AppState>(AppState.TREE);
   const frameIdRef = useRef<number>(0);
+  const lastVideoTimeRef = useRef<number>(-1);
+  const lastPredictionTimeRef = useRef<number>(0);
   
-  // Ref for callbacks to avoid stale closures
+  // Refs for callbacks
   const onStateChangeRef = useRef(onStateChange);
   const onHandMoveRef = useRef(onHandMove);
   const onGrabRef = useRef(onGrab);
+  const isMirroredRef = useRef(isMirrored);
 
   useEffect(() => {
     onStateChangeRef.current = onStateChange;
     onHandMoveRef.current = onHandMove;
     onGrabRef.current = onGrab;
-  }, [onStateChange, onHandMove, onGrab]);
+    isMirroredRef.current = isMirrored;
+  }, [onStateChange, onHandMove, onGrab, isMirrored]);
 
-  // Hysteresis refs
   const wasPinchingRef = useRef(false);
 
-  // Debug Data refs
   const debugDataRef = useRef({
     x: 0, y: 0, z: 0,
     dist: 0,
     pinching: false,
     state: AppState.TREE
   });
+
+  // Drag Event Handlers
+  const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+    setIsDragging(true);
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    dragStartRef.current = { x: clientX, y: clientY };
+    initialPosRef.current = { x: position.x, y: position.y };
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent | TouchEvent) => {
+      if (!isDragging) return;
+      e.preventDefault(); // Prevent scrolling on touch
+      
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+      const deltaX = clientX - dragStartRef.current.x;
+      const deltaY = clientY - dragStartRef.current.y;
+
+      setPosition({
+        x: initialPosRef.current.x + deltaX,
+        y: initialPosRef.current.y + deltaY
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('touchmove', handleMouseMove, { passive: false });
+      window.addEventListener('touchend', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleMouseMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [isDragging]);
 
   useEffect(() => {
     let handLandmarker: HandLandmarker | null = null;
@@ -76,10 +132,23 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
     const predict = () => {
       if (!handLandmarker || !video) return;
       
+      const now = performance.now();
+      // Throttle to ~30FPS (32ms)
+      // This is VITAL. Running ML at 60fps on Main Thread kills rendering performance.
+      // We rely on the Interpolation in App.tsx to make it LOOK like 60fps.
+      if (now - lastPredictionTimeRef.current < 32) {
+         frameIdRef.current = requestAnimationFrame(predict);
+         return;
+      }
+      lastPredictionTimeRef.current = now;
+
       if (video.videoWidth > 0 && video.videoHeight > 0) {
-        const results = handLandmarker.detectForVideo(video, performance.now());
-        drawDebug(results);
-        processGestures(results);
+        if (video.currentTime !== lastVideoTimeRef.current) {
+            lastVideoTimeRef.current = video.currentTime;
+            const results = handLandmarker.detectForVideo(video, now);
+            drawDebug(results);
+            processGestures(results);
+        }
       }
       
       frameIdRef.current = requestAnimationFrame(predict);
@@ -98,6 +167,8 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      const isMirroredNow = isMirroredRef.current;
+
       // --- Draw Skeleton ---
       if (result.landmarks && result.landmarks.length > 0) {
         const landmarks = result.landmarks[0];
@@ -107,7 +178,9 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         ctx.strokeStyle = debugDataRef.current.pinching ? "#ffff00" : "#00ff00";
         ctx.fillStyle = "#ff0000";
 
-        const getX = (val: number) => (1 - val) * canvas.width;
+        // If mirrored: x = (1 - val) * w
+        // If not mirrored: x = val * w
+        const getX = (val: number) => (isMirroredNow ? (1 - val) : val) * canvas.width;
         const getY = (val: number) => val * canvas.height;
 
         for (const conn of connections) {
@@ -154,6 +227,7 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       if (!result.landmarks || result.landmarks.length === 0) return;
 
       const landmarks = result.landmarks[0]; 
+      const isMirroredNow = isMirroredRef.current;
 
       const distSq = (p1: any, p2: any) => (p1.x - p2.x)**2 + (p1.y - p2.y)**2 + (p1.z - p2.z)**2;
 
@@ -161,8 +235,24 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       const centerX = (landmarks[0].x + landmarks[9].x) / 2;
       const centerY = (landmarks[0].y + landmarks[9].y) / 2;
       
-      const palmX = (0.5 - centerX) * 2; 
-      const palmY = (0.5 - centerY) * 2;
+      // Coordinate Mapping:
+      // MediaPipe x: 0 (Left of Image) -> 1 (Right of Image)
+      // Screen x: -1 (Left) -> 1 (Right)
+      
+      let palmX = 0;
+      if (isMirroredNow) {
+        // Mirrored Mode (Selfie):
+        // Physical Right Hand -> Appears on Image Left (x ~ 0) -> We want Cursor Right (val > 0)
+        // So Low X -> High Output
+        palmX = (0.5 - centerX) * 2; 
+      } else {
+        // Normal Mode (Webcam):
+        // Physical Right Hand -> Appears on Image Right (x ~ 1) -> We want Cursor Right (val > 0)
+        // So High X -> High Output
+        palmX = (centerX - 0.5) * 2;
+      }
+
+      const palmY = (0.5 - centerY) * 2; // Y is usually consistent (Top=0)
 
       const palmSize = Math.sqrt(distSq(landmarks[0], landmarks[9]));
       const zoomFactor = Math.min(Math.max((palmSize - 0.1) * 3.33, 0), 1);
@@ -192,9 +282,8 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       const pinchDist = Math.sqrt(distSq(thumbTip, indexTip));
       debugDataRef.current.dist = pinchDist;
       
-      // Hysteresis Settings
-      const PINCH_ENTER = 0.06; // Trigger pinch
-      const PINCH_EXIT = 0.10;  // Release pinch
+      const PINCH_ENTER = 0.06; 
+      const PINCH_EXIT = 0.10;  
 
       let isPinching = wasPinchingRef.current;
       if (isPinching) {
@@ -207,27 +296,18 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       debugDataRef.current.pinching = isPinching;
 
       // --- STATE MACHINE ---
-      
       if (fingersFolded) {
-        // [FIST] -> TREE State
         if (lastStateRef.current !== AppState.TREE) {
           lastStateRef.current = AppState.TREE;
           onStateChangeRef.current(AppState.TREE);
         }
-        // Force release grab if making a fist
         onGrabRef.current(false);
-        wasPinchingRef.current = false; // Reset pinch memory
+        wasPinchingRef.current = false; 
       } else {
-        // [OPEN HAND] -> SCATTERED State logic
-        
-        // If we were in TREE, we definitely switch to SCATTERED now
         if (lastStateRef.current === AppState.TREE) {
            lastStateRef.current = AppState.SCATTERED;
            onStateChangeRef.current(AppState.SCATTERED);
         }
-
-        // Handle Grab / Pinch
-        // This is valid in SCATTERED or PHOTO_VIEW states
         onGrabRef.current(isPinching);
       }
 
@@ -247,10 +327,36 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
   }, []);
 
   return (
-    <div className="absolute top-4 right-4 w-64 h-48 bg-black/50 rounded-lg overflow-hidden border border-amber-500/30 shadow-lg z-50">
+    <div 
+      className="fixed z-50 rounded-lg overflow-hidden border border-amber-500/30 shadow-lg select-none"
+      style={{ 
+        width: '256px', 
+        height: '192px',
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        cursor: isDragging ? 'grabbing' : 'grab'
+      }}
+    >
+      {/* Draggable Header / Overlay */}
+      <div 
+        className="absolute inset-0 z-10"
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleMouseDown}
+      />
+      
+      {/* Controls Overlay */}
+      <div className="absolute top-2 right-2 z-20 flex gap-2">
+         <button 
+           onClick={(e) => { e.stopPropagation(); setIsMirrored(!isMirrored); }}
+           className="bg-black/60 hover:bg-black/80 text-amber-500 text-xs px-2 py-1 rounded border border-amber-500/30 backdrop-blur-sm transition-colors"
+         >
+           {isMirrored ? "镜像:开" : "镜像:关"}
+         </button>
+      </div>
+
       <video 
         ref={videoRef} 
-        className={`absolute inset-0 w-full h-full object-cover transform -scale-x-100 ${loaded ? 'opacity-60' : 'opacity-0'}`} 
+        className={`absolute inset-0 w-full h-full object-cover pointer-events-none ${isMirrored ? 'transform -scale-x-100' : ''} ${loaded ? 'opacity-60' : 'opacity-0'}`} 
         playsInline 
         muted
       />
@@ -259,7 +365,7 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         className="absolute inset-0 w-full h-full object-cover pointer-events-none"
       />
       {!loaded && (
-        <div className="absolute inset-0 flex items-center justify-center text-amber-500 text-xs">
+        <div className="absolute inset-0 flex items-center justify-center text-amber-500 text-xs pointer-events-none">
           启动相机中...
         </div>
       )}
