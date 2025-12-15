@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FilesetResolver, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import { AppState } from '../types';
 
@@ -6,16 +6,23 @@ interface HandControllerProps {
   onStateChange: (state: AppState) => void;
   onHandMove: (x: number, y: number, z: number) => void;
   onGrab: (isGrabbing: boolean) => void;
+  onMlLoaded?: () => void;
+  cameraStream: MediaStream; // Stream is now passed in
 }
 
-export const HandController: React.FC<HandControllerProps> = ({ onStateChange, onHandMove, onGrab }) => {
+export const HandController: React.FC<HandControllerProps> = ({ 
+  onStateChange, 
+  onHandMove, 
+  onGrab, 
+  onMlLoaded, 
+  cameraStream 
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [isMirrored, setIsMirrored] = useState(true); // Default to mirrored (selfie mode)
+  const [isMirrored, setIsMirrored] = useState(true);
   
   // Dragging State
-  const [position, setPosition] = useState({ x: window.innerWidth - 280, y: 16 }); // Initial top-rightish
+  const [position, setPosition] = useState({ x: window.innerWidth - 280, y: 16 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const initialPosRef = useRef({ x: 0, y: 0 });
@@ -25,7 +32,6 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
   const lastVideoTimeRef = useRef<number>(-1);
   const lastPredictionTimeRef = useRef<number>(0);
   
-  // Refs for callbacks
   const onStateChangeRef = useRef(onStateChange);
   const onHandMoveRef = useRef(onHandMove);
   const onGrabRef = useRef(onGrab);
@@ -47,12 +53,11 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
     state: AppState.TREE
   });
 
-  // Drag Event Handlers
+  // Drag Handlers
   const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
     setIsDragging(true);
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
     dragStartRef.current = { x: clientX, y: clientY };
     initialPosRef.current = { x: position.x, y: position.y };
   };
@@ -60,23 +65,15 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent | TouchEvent) => {
       if (!isDragging) return;
-      e.preventDefault(); // Prevent scrolling on touch
-      
+      e.preventDefault();
       const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
-      const deltaX = clientX - dragStartRef.current.x;
-      const deltaY = clientY - dragStartRef.current.y;
-
       setPosition({
-        x: initialPosRef.current.x + deltaX,
-        y: initialPosRef.current.y + deltaY
+        x: initialPosRef.current.x + (clientX - dragStartRef.current.x),
+        y: initialPosRef.current.y + (clientY - dragStartRef.current.y)
       });
     };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
+    const handleMouseUp = () => setIsDragging(false);
 
     if (isDragging) {
       window.addEventListener('mousemove', handleMouseMove);
@@ -84,7 +81,6 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       window.addEventListener('touchmove', handleMouseMove, { passive: false });
       window.addEventListener('touchend', handleMouseUp);
     }
-
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -93,11 +89,13 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
     };
   }, [isDragging]);
 
+  // ML Setup
   useEffect(() => {
     let handLandmarker: HandLandmarker | null = null;
     let video: HTMLVideoElement | null = null;
 
     const setup = async () => {
+      // 1. Load Vision Model
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
       );
@@ -111,13 +109,11 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         numHands: 1
       });
 
+      // 2. Setup Video from Prop
       video = videoRef.current;
       if (!video) return;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 640, height: 480 } 
-      });
-      video.srcObject = stream;
+      video.srcObject = cameraStream;
       await new Promise((resolve) => {
         video!.onloadedmetadata = () => {
           video!.play();
@@ -125,7 +121,8 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         };
       });
 
-      setLoaded(true);
+      // 3. Signal Ready
+      if (onMlLoaded) onMlLoaded();
       predict();
     };
 
@@ -133,9 +130,7 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       if (!handLandmarker || !video) return;
       
       const now = performance.now();
-      // Throttle to ~30FPS (32ms)
-      // This is VITAL. Running ML at 60fps on Main Thread kills rendering performance.
-      // We rely on the Interpolation in App.tsx to make it LOOK like 60fps.
+      // Throttle to 30FPS
       if (now - lastPredictionTimeRef.current < 32) {
          frameIdRef.current = requestAnimationFrame(predict);
          return;
@@ -150,7 +145,6 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
             processGestures(results);
         }
       }
-      
       frameIdRef.current = requestAnimationFrame(predict);
     };
 
@@ -166,10 +160,8 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       const isMirroredNow = isMirroredRef.current;
 
-      // --- Draw Skeleton ---
       if (result.landmarks && result.landmarks.length > 0) {
         const landmarks = result.landmarks[0];
         const connections = HandLandmarker.HAND_CONNECTIONS;
@@ -178,8 +170,6 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         ctx.strokeStyle = debugDataRef.current.pinching ? "#ffff00" : "#00ff00";
         ctx.fillStyle = "#ff0000";
 
-        // If mirrored: x = (1 - val) * w
-        // If not mirrored: x = val * w
         const getX = (val: number) => (isMirroredNow ? (1 - val) : val) * canvas.width;
         const getY = (val: number) => val * canvas.height;
 
@@ -191,36 +181,26 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
           ctx.lineTo(getX(p2.x), getY(p2.y));
           ctx.stroke();
         }
-
         for (const p of landmarks) {
           ctx.beginPath();
           ctx.arc(getX(p.x), getY(p.y), 5, 0, 2 * Math.PI);
           ctx.fill();
         }
       }
-
-      // --- Draw Stats Bar ---
-      const barHeight = 60; 
+      
+      // Draw Stats
+      const barHeight = 40; 
       const yPos = canvas.height - barHeight;
-
-      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
       ctx.fillRect(0, yPos, canvas.width, barHeight);
-
       ctx.textBaseline = "middle";
       const { dist, pinching } = debugDataRef.current;
       
-      const padding = 20;
-      const colWidth = canvas.width / 2;
-
-      const distStr = `Dist:${dist.toFixed(3)}`;
-      
-      ctx.font = "bold 20px monospace";
+      ctx.font = "bold 16px monospace";
       ctx.fillStyle = "#00ff00"; 
-      ctx.fillText(distStr, padding, yPos + barHeight/2);
-
-      const pinchText = pinching ? "GRAB: ON" : "GRAB: OFF";
-      ctx.fillStyle = pinching ? "#ffff00" : "#888"; 
-      ctx.fillText(pinchText, colWidth, yPos + barHeight/2);
+      ctx.fillText(`D:${dist.toFixed(2)}`, 10, yPos + barHeight/2);
+      ctx.fillStyle = pinching ? "#ffff00" : "#aaa"; 
+      ctx.fillText(pinching ? "GRAB" : "FREE", canvas.width - 60, yPos + barHeight/2);
     };
 
     const processGestures = (result: HandLandmarkerResult) => {
@@ -228,32 +208,14 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
 
       const landmarks = result.landmarks[0]; 
       const isMirroredNow = isMirroredRef.current;
-
       const distSq = (p1: any, p2: any) => (p1.x - p2.x)**2 + (p1.y - p2.y)**2 + (p1.z - p2.z)**2;
 
-      // 1. Calculate Hand Position & Zoom
+      // 1. Position
       const centerX = (landmarks[0].x + landmarks[9].x) / 2;
       const centerY = (landmarks[0].y + landmarks[9].y) / 2;
       
-      // Coordinate Mapping:
-      // MediaPipe x: 0 (Left of Image) -> 1 (Right of Image)
-      // Screen x: -1 (Left) -> 1 (Right)
-      
-      let palmX = 0;
-      if (isMirroredNow) {
-        // Mirrored Mode (Selfie):
-        // Physical Right Hand -> Appears on Image Left (x ~ 0) -> We want Cursor Right (val > 0)
-        // So Low X -> High Output
-        palmX = (0.5 - centerX) * 2; 
-      } else {
-        // Normal Mode (Webcam):
-        // Physical Right Hand -> Appears on Image Right (x ~ 1) -> We want Cursor Right (val > 0)
-        // So High X -> High Output
-        palmX = (centerX - 0.5) * 2;
-      }
-
-      const palmY = (0.5 - centerY) * 2; // Y is usually consistent (Top=0)
-
+      let palmX = isMirroredNow ? (0.5 - centerX) * 2 : (centerX - 0.5) * 2;
+      const palmY = (0.5 - centerY) * 2;
       const palmSize = Math.sqrt(distSq(landmarks[0], landmarks[9]));
       const zoomFactor = Math.min(Math.max((palmSize - 0.1) * 3.33, 0), 1);
 
@@ -263,39 +225,26 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       debugDataRef.current.y = palmY;
       debugDataRef.current.z = zoomFactor;
 
-      // 2. Gesture Recognition
+      // 2. Gesture
       const thumbTip = landmarks[4];
       const indexTip = landmarks[8];
       const wrist = landmarks[0];
+      const isFingerCurled = (tipIdx: number, pipIdx: number) => distSq(landmarks[tipIdx], wrist) < distSq(landmarks[pipIdx], wrist);
+      const fingersFolded = isFingerCurled(8, 5) && isFingerCurled(12, 9) && isFingerCurled(16, 13) && isFingerCurled(20, 17);
 
-      const isFingerCurled = (tipIdx: number, pipIdx: number) => {
-        return distSq(landmarks[tipIdx], wrist) < distSq(landmarks[pipIdx], wrist);
-      };
-
-      const fingersFolded = 
-        isFingerCurled(8, 5) && 
-        isFingerCurled(12, 9) && 
-        isFingerCurled(16, 13) && 
-        isFingerCurled(20, 17);
-
-      // --- PINCH CALCULATION ---
       const pinchDist = Math.sqrt(distSq(thumbTip, indexTip));
       debugDataRef.current.dist = pinchDist;
       
-      const PINCH_ENTER = 0.06; 
-      const PINCH_EXIT = 0.10;  
-
       let isPinching = wasPinchingRef.current;
       if (isPinching) {
-        if (pinchDist > PINCH_EXIT) isPinching = false;
+        if (pinchDist > 0.10) isPinching = false;
       } else {
-        if (pinchDist < PINCH_ENTER) isPinching = true;
+        if (pinchDist < 0.06) isPinching = true;
       }
       
       wasPinchingRef.current = isPinching;
       debugDataRef.current.pinching = isPinching;
 
-      // --- STATE MACHINE ---
       if (fingersFolded) {
         if (lastStateRef.current !== AppState.TREE) {
           lastStateRef.current = AppState.TREE;
@@ -310,21 +259,18 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         }
         onGrabRef.current(isPinching);
       }
-
       debugDataRef.current.state = lastStateRef.current;
     };
 
-    setup();
+    if (cameraStream) {
+      setup();
+    }
 
     return () => {
       cancelAnimationFrame(frameIdRef.current);
-      if (video && video.srcObject) {
-        const stream = video.srcObject as MediaStream;
-        stream.getTracks().forEach(t => t.stop());
-      }
       if (handLandmarker) handLandmarker.close();
     };
-  }, []);
+  }, [cameraStream]);
 
   return (
     <div 
@@ -337,14 +283,11 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         cursor: isDragging ? 'grabbing' : 'grab'
       }}
     >
-      {/* Draggable Header / Overlay */}
       <div 
         className="absolute inset-0 z-10"
         onMouseDown={handleMouseDown}
         onTouchStart={handleMouseDown}
       />
-      
-      {/* Controls Overlay */}
       <div className="absolute top-2 right-2 z-20 flex gap-2">
          <button 
            onClick={(e) => { e.stopPropagation(); setIsMirrored(!isMirrored); }}
@@ -353,10 +296,9 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
            {isMirrored ? "镜像:开" : "镜像:关"}
          </button>
       </div>
-
       <video 
         ref={videoRef} 
-        className={`absolute inset-0 w-full h-full object-cover pointer-events-none ${isMirrored ? 'transform -scale-x-100' : ''} ${loaded ? 'opacity-60' : 'opacity-0'}`} 
+        className={`absolute inset-0 w-full h-full object-cover pointer-events-none ${isMirrored ? 'transform -scale-x-100' : ''}`} 
         playsInline 
         muted
       />
@@ -364,11 +306,6 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         ref={canvasRef}
         className="absolute inset-0 w-full h-full object-cover pointer-events-none"
       />
-      {!loaded && (
-        <div className="absolute inset-0 flex items-center justify-center text-amber-500 text-xs pointer-events-none">
-          启动相机中...
-        </div>
-      )}
     </div>
   );
 };

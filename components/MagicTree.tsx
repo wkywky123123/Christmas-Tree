@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { InstancedMesh, Object3D, Vector3, TextureLoader, Mesh, Color, Euler, Quaternion, Raycaster, Vector2 } from 'three';
+import { useTexture } from '@react-three/drei';
+import { InstancedMesh, Object3D, Vector3, Mesh, Color, Euler, Quaternion, Raycaster, Vector2, RepeatWrapping } from 'three';
 import { Sparkles } from '@react-three/drei';
 import { CONFIG, COLORS } from '../constants';
 import { AppState } from '../types';
@@ -22,6 +23,7 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
   onPhotoSelect 
 }) => {
   const meshRef = useRef<InstancedMesh>(null);
+  const starRef = useRef<Mesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
   const { camera, raycaster } = useThree();
 
@@ -29,10 +31,19 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
   
   const scatterPositions = useMemo(() => {
     return particles.map(() => ({
-      pos: randomVector(CONFIG.SCATTER_BOUNDS),
+      pos: randomVector(CONFIG.SCATTER_BOUNDS), 
       rot: randomVector(Math.PI),
-    }));
-  }, [particles]);
+    })).map((item, i) => {
+      // Safe zone logic for photos (60% bounds)
+      if (i < photos.length) {
+         return {
+           pos: randomVector(CONFIG.SCATTER_BOUNDS * 0.6), 
+           rot: item.rot
+         };
+      }
+      return item;
+    });
+  }, [particles, photos.length]);
 
   const photoRefs = useRef<(Mesh | null)[]>([]);
   const [activePhoto, setActivePhoto] = useState<number | null>(null);
@@ -48,23 +59,18 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
   useFrame((state, delta) => {
     if (!meshRef.current) return;
     
-    // Read hand position from ref
     const handPos = handPosRef.current;
-
     const targetLerp = appState === AppState.TREE ? 0 : 1;
     currentLerp.current += (targetLerp - currentLerp.current) * delta * 2; 
 
+    // --- Camera Logic ---
     if (appState === AppState.SCATTERED) {
-      // Adjusted sensitivity for more deliberate movement
-      // Reduced multipliers to make rotation less extreme
-      const theta = handPos.x * (Math.PI * 0.15); // Reduced from 0.2
-      const phi = Math.PI / 2 - (handPos.y * Math.PI / 12); // Reduced from pi/8
+      const theta = handPos.x * (Math.PI * 0.15); 
+      const phi = Math.PI / 2 - (handPos.y * Math.PI / 12); 
       const zoomRadius = CONFIG.CAMERA_Z - (handPos.z * 5); 
 
       const targetPos = new Vector3();
       targetPos.setFromSphericalCoords(zoomRadius, phi, theta);
-
-      // Lower lerp factor (from 2 to 0.8) adds 'weight' and smoothness
       camera.position.lerp(targetPos, delta * 0.8);
       camera.lookAt(0, 0, 0);
 
@@ -76,6 +82,19 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
 
     const time = state.clock.elapsedTime;
     
+    // --- Star Animation ---
+    if (starRef.current) {
+      const starScaleBase = appState === AppState.TREE ? 1.5 : 0.5;
+      const starPulse = Math.sin(time * 3) * 0.2 + 1;
+      // In tree mode: sit at top. In scattered: float up slightly
+      const starY = CONFIG.TREE_HEIGHT / 2 + 1 + (appState === AppState.SCATTERED ? 5 : 0);
+      
+      starRef.current.position.lerp(new Vector3(0, starY, 0), delta * 2);
+      starRef.current.rotation.y += delta * 0.5;
+      starRef.current.scale.lerp(new Vector3(starScaleBase, starScaleBase, starScaleBase).multiplyScalar(starPulse), delta * 2);
+    }
+
+    // --- Particles Animation ---
     particles.forEach((data, i) => {
       const t = currentLerp.current;
       
@@ -107,9 +126,7 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
       const baseColor = new Color(data.color);
       const pulse = Math.sin(time * 2 + i * 13) * 0.5 + 0.5; 
       const intensity = 1 + pulse; 
-      
       baseColor.multiplyScalar(intensity); 
-      
       meshRef.current!.setColorAt(i, baseColor);
     });
     meshRef.current.instanceMatrix.needsUpdate = true;
@@ -131,11 +148,8 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
 
       if (activePhoto === i && appState === AppState.PHOTO_VIEW) {
         const camDir = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-        // Position photo 5 units in front of camera
         targetPos = camera.position.clone().add(camDir.multiplyScalar(5));
         
-        // Offset UP in screen space (Y axis relative to camera)
-        // Increased to 2.0 to ensure it's comfortably in the top half
         const camUp = new Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
         targetPos.add(camUp.multiplyScalar(2.0));
 
@@ -155,7 +169,6 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
        raycaster.setFromCamera(ndc, camera);
        
        const validMeshes = photoRefs.current.filter(m => m !== null) as Object3D[];
-       
        const intersects = raycaster.intersectObjects(validMeshes, true);
 
        if (intersects.length > 0) {
@@ -163,7 +176,6 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
          while (hitObject && !photoRefs.current.includes(hitObject as Mesh)) {
             hitObject = hitObject.parent;
          }
-
          if (hitObject) {
             const index = photoRefs.current.indexOf(hitObject as Mesh);
             if (index !== -1) {
@@ -188,6 +200,20 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
         />
       </instancedMesh>
       
+      {/* --- THE STAR --- */}
+      <mesh ref={starRef} position={[0, CONFIG.TREE_HEIGHT/2 + 1, 0]}>
+        <octahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial 
+          color="#FFD700" 
+          emissive="#FFD700"
+          emissiveIntensity={2}
+          toneMapped={false}
+          roughness={0.2}
+          metalness={1}
+        />
+        <pointLight color="#FFD700" intensity={2} distance={10} decay={2} />
+      </mesh>
+
       <Sparkles 
         count={150} 
         scale={12} 
@@ -210,8 +236,11 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
   );
 };
 
+// PhotoMesh using useTexture for Preloading support
 const PhotoMesh = ({ src, index, setRef }: { src: string, index: number, setRef: (el: Mesh | null) => void }) => {
-  const texture = useMemo(() => new TextureLoader().load(src), [src]);
+  // useTexture is suspense-aware and reports to useProgress
+  const texture = useTexture(src);
+  
   return (
     <group ref={setRef}>
        <mesh>
