@@ -1,0 +1,7 @@
+{
+  "name": "圣诞手势魔法",
+  "description": "一个极具电影感的3D手势控制圣诞树。挥挥手即可打散、聚合粒子，捏合手指抓取照片，体验魔法般的节日氛围。",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
