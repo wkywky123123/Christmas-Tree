@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useProgress } from '@react-three/drei';
+import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import { Scene } from './components/Scene';
 import { HandController } from './components/HandController';
 import { AppState } from './types';
@@ -15,73 +16,77 @@ const DEFAULT_PHOTOS = [
 
 // --- LOADING SCREEN COMPONENT ---
 const LoadingScreen = ({ 
-  started, 
+  isReady, 
   onStart, 
-  mlLoaded, 
-  textureProgress 
+  loadingProgress,
+  hasStarted
 }: { 
-  started: boolean; 
+  isReady: boolean; 
   onStart: () => void; 
-  mlLoaded: boolean;
-  textureProgress: number;
+  loadingProgress: number;
+  hasStarted: boolean;
 }) => {
-  const [dots, setDots] = useState('');
+  const [displayProgress, setDisplayProgress] = useState(0);
 
-  // Total Progress Calculation: 
-  // We give MediaPipe initialization 30% weight, and Textures 70% weight (or wait for both)
-  // Simple logic: If ML not loaded, cap at 90%. When everything ready, 100%.
-  
-  const totalProgress = Math.min(
-    (mlLoaded ? 30 : 10) + (textureProgress * 0.7),
-    mlLoaded && textureProgress >= 100 ? 100 : 95
-  );
-
+  // Smooth progress interpolation
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDots(prev => prev.length >= 3 ? '' : prev + '.');
-    }, 500);
-    return () => clearInterval(interval);
-  }, []);
+    let animFrame: number;
+    const update = () => {
+      setDisplayProgress(prev => {
+        const diff = loadingProgress - prev;
+        if (Math.abs(diff) < 0.5) return loadingProgress;
+        return prev + diff * 0.1;
+      });
+      animFrame = requestAnimationFrame(update);
+    };
+    update();
+    return () => cancelAnimationFrame(animFrame);
+  }, [loadingProgress]);
 
-  if (!started) {
-    return (
-      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 to-black">
-        <h1 className="text-5xl font-serif text-amber-400 mb-6 drop-shadow-[0_0_15px_rgba(255,215,0,0.6)]">
-          圣诞手势魔法
-        </h1>
-        <p className="text-gray-300 mb-12 max-w-md leading-relaxed">
-          挥手成林，捏合取景。<br/>请允许使用摄像头以开启魔法体验。
-        </p>
-        <button 
-          onClick={onStart}
-          className="group relative px-8 py-4 bg-transparent border border-amber-500/50 rounded-full overflow-hidden transition-all hover:border-amber-400 hover:shadow-[0_0_30px_rgba(255,215,0,0.3)]"
-        >
-          <div className="absolute inset-0 bg-amber-500/10 group-hover:bg-amber-500/20 transition-all"></div>
-          <span className="relative text-amber-400 font-bold tracking-widest uppercase text-sm flex items-center gap-2">
-            开启体验 {dots}
-          </span>
-        </button>
-      </div>
-    );
+  // If we have started, fade out
+  if (hasStarted) {
+    return null;
   }
 
-  // Loading State
   return (
-    <div className={`absolute inset-0 z-50 flex flex-col items-center justify-center bg-black transition-opacity duration-1000 ${totalProgress >= 100 ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-      <div className="w-64 mb-4">
-        <div className="h-1 w-full bg-gray-800 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-amber-500 transition-all duration-300 ease-out box-shadow-[0_0_10px_#f59e0b]"
-            style={{ width: `${totalProgress}%` }}
-          />
+    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 to-black">
+      <h1 className="text-5xl font-serif text-amber-400 mb-6 drop-shadow-[0_0_15px_rgba(255,215,0,0.6)] animate-fade-in-up">
+        圣诞手势魔法
+      </h1>
+      
+      {!isReady ? (
+        <div className="w-full max-w-md flex flex-col items-center">
+          <p className="text-amber-500/80 text-xs font-mono tracking-widest uppercase mb-4 animate-pulse">
+            正在加载资源... {Math.round(displayProgress)}%
+          </p>
+          <div className="w-64 h-1 bg-gray-800 rounded-full overflow-hidden relative">
+            <div 
+              className="h-full bg-amber-500 shadow-[0_0_15px_#f59e0b] transition-all duration-75 ease-linear"
+              style={{ width: `${displayProgress}%` }}
+            />
+          </div>
+          <p className="text-gray-600 text-[10px] mt-4 font-mono">
+            {displayProgress < 50 ? "初始化AI模型..." : "加载3D场景纹理..."}
+          </p>
         </div>
-      </div>
-      <p className="text-amber-500/80 text-xs font-mono tracking-widest uppercase">
-        Loading Assets... {Math.round(totalProgress)}%
-      </p>
-      <p className="text-gray-600 text-[10px] mt-2">
-        {!mlLoaded ? "正在初始化手势识别模型..." : "正在加载3D场景..."}
-      </p>
+      ) : (
+        <div className="animate-fade-in">
+           <p className="text-gray-300 mb-12 max-w-md leading-relaxed">
+            资源加载完成。<br/>
+            挥手成林，捏合取景。<br/>
+            点击下方按钮开启体验。
+          </p>
+          <button 
+            onClick={onStart}
+            className="group relative px-10 py-4 bg-transparent border border-amber-500/50 rounded-full overflow-hidden transition-all hover:border-amber-400 hover:shadow-[0_0_30px_rgba(255,215,0,0.4)] active:scale-95"
+          >
+            <div className="absolute inset-0 bg-amber-500/10 group-hover:bg-amber-500/20 transition-all"></div>
+            <span className="relative text-amber-400 font-bold tracking-widest uppercase text-sm flex items-center gap-2">
+              开启魔法
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -93,7 +98,7 @@ function App() {
   // App Logic State
   const [hasStarted, setHasStarted] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [mlLoaded, setMlLoaded] = useState(false);
+  const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
   
   // 3D Loading Progress
   const { progress: textureProgress } = useProgress();
@@ -108,6 +113,49 @@ function App() {
   const [isMobilePortrait, setIsMobilePortrait] = useState(false);
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(true);
 
+  // Initialize MediaPipe immediately on mount
+  useEffect(() => {
+    const initMediaPipe = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+        );
+        const lm = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1
+        });
+        setLandmarker(lm);
+      } catch (error) {
+        console.error("Failed to load MediaPipe:", error);
+      }
+    };
+    initMediaPipe();
+  }, []);
+
+  // Calculate Total Load Progress
+  // AI Load = 50%, Texture Load = 50%
+  const mlProgress = landmarker ? 50 : 0; // Simple binary for ML part as we can't track download easily
+  // However, to make it feel real-time, we can pretend ML is loading up to 45% with a timer if it's not done
+  const [simulatedMlProgress, setSimulatedMlProgress] = useState(0);
+
+  useEffect(() => {
+    if (!landmarker) {
+      const interval = setInterval(() => {
+        setSimulatedMlProgress(prev => Math.min(prev + 1, 45));
+      }, 100);
+      return () => clearInterval(interval);
+    } else {
+      setSimulatedMlProgress(50);
+    }
+  }, [landmarker]);
+
+  const totalProgress = simulatedMlProgress + (textureProgress * 0.5);
+  const isReady = !!landmarker && textureProgress >= 100;
+
   // Check screen size
   useEffect(() => {
     const checkOrientation = () => {
@@ -121,10 +169,8 @@ function App() {
   }, []);
 
   // --- START HANDLER ---
-  // This MUST be called by a user interaction (click) to satisfy mobile browser policies
   const handleStart = async () => {
     try {
-      setHasStarted(true);
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
           width: { ideal: 640 },
@@ -133,10 +179,10 @@ function App() {
         } 
       });
       setCameraStream(stream);
+      setHasStarted(true);
     } catch (err) {
       console.error("Camera permission failed:", err);
       alert("无法访问摄像头。请确保您已在浏览器设置中授予权限。");
-      setHasStarted(false);
     }
   };
 
@@ -206,10 +252,10 @@ function App() {
     <div className="w-full h-full relative font-sans text-white">
       {/* LOADING & ENTRY OVERLAY */}
       <LoadingScreen 
-        started={hasStarted} 
+        isReady={isReady} 
         onStart={handleStart}
-        mlLoaded={mlLoaded}
-        textureProgress={textureProgress}
+        loadingProgress={totalProgress}
+        hasStarted={hasStarted}
       />
 
       {/* 3D Scene Layer */}
@@ -221,19 +267,19 @@ function App() {
         onPhotoSelect={handlePhotoSelect}
       />
 
-      {/* Hand Tracking Layer - Only active when stream is ready */}
-      {cameraStream && (
+      {/* Hand Tracking Layer - Active when stream & model are ready */}
+      {cameraStream && landmarker && (
         <HandController 
           cameraStream={cameraStream}
+          landmarker={landmarker}
           onStateChange={handleStateChange}
           onHandMove={handleHandMove}
           onGrab={handleGrab}
-          onMlLoaded={() => setMlLoaded(true)}
         />
       )}
 
-      {/* UI Overlay - Only show when loaded */}
-      {mlLoaded && textureProgress >= 100 && (
+      {/* UI Overlay - Only show when started */}
+      {hasStarted && (
         <>
           <div className="absolute top-0 left-0 p-6 pointer-events-none w-full flex justify-between animate-fade-in">
             <div>

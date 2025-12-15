@@ -1,21 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FilesetResolver, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import { HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import { AppState } from '../types';
 
 interface HandControllerProps {
   onStateChange: (state: AppState) => void;
   onHandMove: (x: number, y: number, z: number) => void;
   onGrab: (isGrabbing: boolean) => void;
-  onMlLoaded?: () => void;
-  cameraStream: MediaStream; // Stream is now passed in
+  cameraStream: MediaStream;
+  landmarker: HandLandmarker; // Preloaded instance
 }
 
 export const HandController: React.FC<HandControllerProps> = ({ 
   onStateChange, 
   onHandMove, 
   onGrab, 
-  onMlLoaded, 
-  cameraStream 
+  cameraStream,
+  landmarker
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -89,27 +89,11 @@ export const HandController: React.FC<HandControllerProps> = ({
     };
   }, [isDragging]);
 
-  // ML Setup
+  // Prediction Loop
   useEffect(() => {
-    let handLandmarker: HandLandmarker | null = null;
     let video: HTMLVideoElement | null = null;
 
-    const setup = async () => {
-      // 1. Load Vision Model
-      const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-      );
-      
-      handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-          delegate: "GPU"
-        },
-        runningMode: "VIDEO",
-        numHands: 1
-      });
-
-      // 2. Setup Video from Prop
+    const startPrediction = async () => {
       video = videoRef.current;
       if (!video) return;
 
@@ -121,13 +105,11 @@ export const HandController: React.FC<HandControllerProps> = ({
         };
       });
 
-      // 3. Signal Ready
-      if (onMlLoaded) onMlLoaded();
       predict();
     };
 
     const predict = () => {
-      if (!handLandmarker || !video) return;
+      if (!landmarker || !video) return;
       
       const now = performance.now();
       // Throttle to 30FPS
@@ -140,7 +122,7 @@ export const HandController: React.FC<HandControllerProps> = ({
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         if (video.currentTime !== lastVideoTimeRef.current) {
             lastVideoTimeRef.current = video.currentTime;
-            const results = handLandmarker.detectForVideo(video, now);
+            const results = landmarker.detectForVideo(video, now);
             drawDebug(results);
             processGestures(results);
         }
@@ -263,14 +245,13 @@ export const HandController: React.FC<HandControllerProps> = ({
     };
 
     if (cameraStream) {
-      setup();
+      startPrediction();
     }
 
     return () => {
       cancelAnimationFrame(frameIdRef.current);
-      if (handLandmarker) handLandmarker.close();
     };
-  }, [cameraStream]);
+  }, [cameraStream, landmarker]);
 
   return (
     <div 
