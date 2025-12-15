@@ -25,10 +25,8 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
   const dummy = useMemo(() => new Object3D(), []);
   const { camera, raycaster } = useThree();
 
-  // Generate static data for the tree shape
   const particles = useMemo(() => generateTreePositions(CONFIG.PARTICLE_COUNT), []);
   
-  // Store random scattered positions
   const scatterPositions = useMemo(() => {
     return particles.map(() => ({
       pos: randomVector(CONFIG.SCATTER_BOUNDS),
@@ -36,14 +34,11 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
     }));
   }, [particles]);
 
-  // Photo Meshes Logic
   const photoRefs = useRef<(Mesh | null)[]>([]);
   const [activePhoto, setActivePhoto] = useState<number | null>(null);
 
-  // Animation Refs
-  const currentLerp = useRef(0); // 0 = Tree, 1 = Scattered
+  const currentLerp = useRef(0);
 
-  // Reset active photo if app state changes to SCATTERED from outside (e.g. hand opened)
   useEffect(() => {
     if (appState === AppState.SCATTERED) {
        setActivePhoto(null);
@@ -53,20 +48,12 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
   useFrame((state, delta) => {
     if (!meshRef.current) return;
 
-    // 1. Handle Global State Interpolation
     const targetLerp = appState === AppState.TREE ? 0 : 1;
-    currentLerp.current += (targetLerp - currentLerp.current) * delta * 2; // Smooth transition
+    currentLerp.current += (targetLerp - currentLerp.current) * delta * 2; 
 
-    // 2. Refined Camera Control (Spherical Orbit)
     if (appState === AppState.SCATTERED) {
-      // Map hand X/Y to spherical angles
-      // Reduced sensitivity significantly (0.2) to prevent "chasing" the object
       const theta = handPos.x * (Math.PI * 0.2); 
-      
-      // Vertical tilt
       const phi = Math.PI / 2 - (handPos.y * Math.PI / 8); 
-
-      // Z maps to Radius (Zoom)
       const zoomRadius = CONFIG.CAMERA_Z - (handPos.z * 5); 
 
       const targetPos = new Vector3();
@@ -76,13 +63,11 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
       camera.lookAt(0, 0, 0);
 
     } else if (appState === AppState.TREE) {
-      // Reset camera to front view
       const targetPos = new Vector3(0, 0, CONFIG.CAMERA_Z);
       camera.position.lerp(targetPos, delta * 2);
       camera.lookAt(0, 0, 0);
     }
 
-    // 3. Update Particles
     const time = state.clock.elapsedTime;
     
     particles.forEach((data, i) => {
@@ -124,7 +109,7 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
     meshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
 
-    // 4. Update Photos
+    // --- Photo Update Logic ---
     photoRefs.current.forEach((mesh, i) => {
       if (!mesh) return;
       
@@ -138,11 +123,16 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
       let targetScale = t === 0 ? 0.8 : 1.5;
       let targetRot = new Quaternion().setFromEuler(new Euler(0, 0, 0));
 
-      // Zoom State Handling
       if (activePhoto === i && appState === AppState.PHOTO_VIEW) {
         const camDir = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-        // Bring closer to camera
+        // Position photo 5 units in front of camera
         targetPos = camera.position.clone().add(camDir.multiplyScalar(5));
+        
+        // Offset UP in screen space (Y axis relative to camera)
+        // Increased to 2.0 to ensure it's comfortably in the top half
+        const camUp = new Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+        targetPos.add(camUp.multiplyScalar(2.0));
+
         targetScale = 4.0;
         targetRot = camera.quaternion.clone();
       } else if (appState === AppState.SCATTERED) {
@@ -154,21 +144,16 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
       mesh.quaternion.slerp(targetRot, delta * 3);
     });
 
-    // 5. Interaction Logic (Grabbing with Raycaster)
     if (appState === AppState.SCATTERED && isGrabbing && activePhoto === null) {
        const ndc = new Vector2(handPos.x, handPos.y); 
        raycaster.setFromCamera(ndc, camera);
        
        const validMeshes = photoRefs.current.filter(m => m !== null) as Object3D[];
        
-       // CRITICAL FIX: recursive must be TRUE because photoRefs are Groups containing Meshes
        const intersects = raycaster.intersectObjects(validMeshes, true);
 
        if (intersects.length > 0) {
-         // Traverse up to find the group logic handled in setRef
          let hitObject: Object3D | null = intersects[0].object;
-         
-         // Find the root group that matches one of our refs
          while (hitObject && !photoRefs.current.includes(hitObject as Mesh)) {
             hitObject = hitObject.parent;
          }
@@ -182,7 +167,6 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
          }
        }
     } else if (appState === AppState.PHOTO_VIEW && !isGrabbing) {
-      // Only release photo if not grabbing anymore
       setActivePhoto(null);
     }
   });
@@ -238,7 +222,6 @@ const PhotoMesh = ({ src, index, setRef }: { src: string, index: number, setRef:
          <boxGeometry args={[1.05, 1.05, 0.05]} />
          <meshStandardMaterial color="#fff" roughness={0.1} metalness={0.5} />
        </mesh>
-       {/* Invisible Hit Area - made slightly larger for easier grabbing */}
        <mesh visible={false}>
          <sphereGeometry args={[1.5]} />
        </mesh>

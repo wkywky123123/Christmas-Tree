@@ -15,12 +15,24 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
   const lastStateRef = useRef<AppState>(AppState.TREE);
   const frameIdRef = useRef<number>(0);
   
+  // Ref for callbacks to avoid stale closures
+  const onStateChangeRef = useRef(onStateChange);
+  const onHandMoveRef = useRef(onHandMove);
+  const onGrabRef = useRef(onGrab);
+
+  useEffect(() => {
+    onStateChangeRef.current = onStateChange;
+    onHandMoveRef.current = onHandMove;
+    onGrabRef.current = onGrab;
+  }, [onStateChange, onHandMove, onGrab]);
+
   // Hysteresis refs
   const wasPinchingRef = useRef(false);
 
-  // Debug Data refs for drawing
+  // Debug Data refs
   const debugDataRef = useRef({
     x: 0, y: 0, z: 0,
+    dist: 0,
     pinching: false,
     state: AppState.TREE
   });
@@ -66,10 +78,7 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         const results = handLandmarker.detectForVideo(video, performance.now());
-        
-        // Draw Debug info
         drawDebug(results);
-        
         processGestures(results);
       }
       
@@ -82,7 +91,6 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Match canvas size to video size
       if (videoRef.current) {
         canvas.width = videoRef.current.videoWidth;
         canvas.height = videoRef.current.videoHeight;
@@ -90,11 +98,7 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // --- Draw Skeleton (Needs to be flipped) ---
-      ctx.save();
-      ctx.scale(-1, 1);
-      ctx.translate(-canvas.width, 0);
-
+      // --- Draw Skeleton ---
       if (result.landmarks && result.landmarks.length > 0) {
         const landmarks = result.landmarks[0];
         const connections = HandLandmarker.HAND_CONNECTIONS;
@@ -103,53 +107,47 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         ctx.strokeStyle = debugDataRef.current.pinching ? "#ffff00" : "#00ff00";
         ctx.fillStyle = "#ff0000";
 
-        // Draw connectors
+        const getX = (val: number) => (1 - val) * canvas.width;
+        const getY = (val: number) => val * canvas.height;
+
         for (const conn of connections) {
           const p1 = landmarks[conn.start];
           const p2 = landmarks[conn.end];
           ctx.beginPath();
-          ctx.moveTo(p1.x * canvas.width, p1.y * canvas.height);
-          ctx.lineTo(p2.x * canvas.width, p2.y * canvas.height);
+          ctx.moveTo(getX(p1.x), getY(p1.y));
+          ctx.lineTo(getX(p2.x), getY(p2.y));
           ctx.stroke();
         }
 
-        // Draw points
         for (const p of landmarks) {
           ctx.beginPath();
-          ctx.arc(p.x * canvas.width, p.y * canvas.height, 5, 0, 2 * Math.PI);
+          ctx.arc(getX(p.x), getY(p.y), 5, 0, 2 * Math.PI);
           ctx.fill();
         }
       }
-      ctx.restore();
 
-      // --- Draw Stats Bar (Bottom, Unflipped Text) ---
-      // Increased height and font size for visibility
+      // --- Draw Stats Bar ---
       const barHeight = 60; 
       const yPos = canvas.height - barHeight;
 
-      // Background
       ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
       ctx.fillRect(0, yPos, canvas.width, barHeight);
 
-      // Text Settings
       ctx.textBaseline = "middle";
-      const { x, y, pinching } = debugDataRef.current;
+      const { dist, pinching } = debugDataRef.current;
       
-      // Layout
       const padding = 20;
       const colWidth = canvas.width / 2;
 
-      // Column 1: Coords
-      const xStr = `X:${x.toFixed(2)}`;
-      const yStr = `Y:${y.toFixed(2)}`;
-      ctx.font = "bold 24px monospace";
+      const distStr = `Dist:${dist.toFixed(3)}`;
+      
+      ctx.font = "bold 20px monospace";
       ctx.fillStyle = "#00ff00"; 
-      ctx.fillText(`${xStr}  ${yStr}`, padding, yPos + barHeight/2);
+      ctx.fillText(distStr, padding, yPos + barHeight/2);
 
-      // Column 2: Pinch Status
       const pinchText = pinching ? "GRAB: ON" : "GRAB: OFF";
       ctx.fillStyle = pinching ? "#ffff00" : "#888"; 
-      ctx.fillText(pinchText, colWidth + padding, yPos + barHeight/2);
+      ctx.fillText(pinchText, colWidth, yPos + barHeight/2);
     };
 
     const processGestures = (result: HandLandmarkerResult) => {
@@ -157,7 +155,6 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
 
       const landmarks = result.landmarks[0]; 
 
-      // Helper: Distance squared
       const distSq = (p1: any, p2: any) => (p1.x - p2.x)**2 + (p1.y - p2.y)**2 + (p1.z - p2.z)**2;
 
       // 1. Calculate Hand Position & Zoom
@@ -170,9 +167,8 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
       const palmSize = Math.sqrt(distSq(landmarks[0], landmarks[9]));
       const zoomFactor = Math.min(Math.max((palmSize - 0.1) * 3.33, 0), 1);
 
-      onHandMove(palmX, palmY, zoomFactor);
+      onHandMoveRef.current(palmX, palmY, zoomFactor);
       
-      // Update debug ref
       debugDataRef.current.x = palmX;
       debugDataRef.current.y = palmY;
       debugDataRef.current.z = zoomFactor;
@@ -192,67 +188,50 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         isFingerCurled(16, 13) && 
         isFingerCurled(20, 17);
 
+      // --- PINCH CALCULATION ---
       const pinchDist = Math.sqrt(distSq(thumbTip, indexTip));
+      debugDataRef.current.dist = pinchDist;
       
-      // --- HYSTERESIS LOGIC ---
-      // Use different thresholds for entering and exiting pinch state
-      // This prevents "flickering" or snapping back when near the boundary.
-      const PINCH_ENTER_THRESHOLD = 0.05; // Needs to be close to start
-      const PINCH_EXIT_THRESHOLD = 0.10;  // Needs to move apart to stop
+      // Hysteresis Settings
+      const PINCH_ENTER = 0.06; // Trigger pinch
+      const PINCH_EXIT = 0.10;  // Release pinch
 
       let isPinching = wasPinchingRef.current;
-      
       if (isPinching) {
-        // Currently pinching, check if we should stop
-        if (pinchDist > PINCH_EXIT_THRESHOLD) {
-          isPinching = false;
-        }
+        if (pinchDist > PINCH_EXIT) isPinching = false;
       } else {
-        // Not pinching, check if we should start
-        if (pinchDist < PINCH_ENTER_THRESHOLD) {
-          isPinching = true;
-        }
+        if (pinchDist < PINCH_ENTER) isPinching = true;
       }
       
       wasPinchingRef.current = isPinching;
-
-      const isOpen = !fingersFolded && !isPinching;
-
-      // Update debug ref
       debugDataRef.current.pinching = isPinching;
 
-      // State Machine Transitions
-      if (fingersFolded && lastStateRef.current !== AppState.TREE) {
-        lastStateRef.current = AppState.TREE;
-        onStateChange(AppState.TREE);
-        onGrab(false); // Force grab release
-      } else if (isOpen) {
-        // If hand is fully open, ensure we are in SCATTERED state
-        // and force grab to false. This fixes the "stuck in pinch" issue.
-        if (lastStateRef.current !== AppState.SCATTERED) {
-            lastStateRef.current = AppState.SCATTERED;
-            onStateChange(AppState.SCATTERED);
+      // --- STATE MACHINE ---
+      
+      if (fingersFolded) {
+        // [FIST] -> TREE State
+        if (lastStateRef.current !== AppState.TREE) {
+          lastStateRef.current = AppState.TREE;
+          onStateChangeRef.current(AppState.TREE);
         }
-        // Always force release if hand is detected as Open
-        if (isPinching) {
-            // Edge case: pinch logic says yes, but open logic says yes (unlikely but possible if thumb is close)
-            // Prioritize Open Hand for navigation
-            isPinching = false; 
-            wasPinchingRef.current = false;
+        // Force release grab if making a fist
+        onGrabRef.current(false);
+        wasPinchingRef.current = false; // Reset pinch memory
+      } else {
+        // [OPEN HAND] -> SCATTERED State logic
+        
+        // If we were in TREE, we definitely switch to SCATTERED now
+        if (lastStateRef.current === AppState.TREE) {
+           lastStateRef.current = AppState.SCATTERED;
+           onStateChangeRef.current(AppState.SCATTERED);
         }
-        onGrab(false);
+
+        // Handle Grab / Pinch
+        // This is valid in SCATTERED or PHOTO_VIEW states
+        onGrabRef.current(isPinching);
       }
 
       debugDataRef.current.state = lastStateRef.current;
-
-      // Only allow grabbing if we aren't in Tree mode and not forcing open
-      if (isPinching && !fingersFolded) {
-        if (lastStateRef.current === AppState.SCATTERED || lastStateRef.current === AppState.PHOTO_VIEW) {
-           onGrab(true);
-        }
-      } else if (!isPinching) {
-        onGrab(false);
-      }
     };
 
     setup();
@@ -275,12 +254,10 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         playsInline 
         muted
       />
-      {/* Canvas for drawing skeleton, also mirrored to match video */}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full object-cover transform -scale-x-100 pointer-events-none"
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none"
       />
-      
       {!loaded && (
         <div className="absolute inset-0 flex items-center justify-center text-amber-500 text-xs">
           启动相机中...
