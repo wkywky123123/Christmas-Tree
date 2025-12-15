@@ -10,9 +10,20 @@ interface HandControllerProps {
 
 export const HandController: React.FC<HandControllerProps> = ({ onStateChange, onHandMove, onGrab }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loaded, setLoaded] = useState(false);
   const lastStateRef = useRef<AppState>(AppState.TREE);
   const frameIdRef = useRef<number>(0);
+  
+  // Hysteresis refs
+  const wasPinchingRef = useRef(false);
+
+  // Debug Data refs for drawing
+  const debugDataRef = useRef({
+    x: 0, y: 0, z: 0,
+    pinching: false,
+    state: AppState.TREE
+  });
 
   useEffect(() => {
     let handLandmarker: HandLandmarker | null = null;
@@ -53,50 +64,124 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
     const predict = () => {
       if (!handLandmarker || !video) return;
       
-      // Only process if video has enough data
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         const results = handLandmarker.detectForVideo(video, performance.now());
+        
+        // Draw Debug info
+        drawDebug(results);
+        
         processGestures(results);
       }
       
       frameIdRef.current = requestAnimationFrame(predict);
     };
 
+    const drawDebug = (result: HandLandmarkerResult) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Match canvas size to video size
+      if (videoRef.current) {
+        canvas.width = videoRef.current.videoWidth;
+        canvas.height = videoRef.current.videoHeight;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // --- Draw Skeleton (Needs to be flipped) ---
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.translate(-canvas.width, 0);
+
+      if (result.landmarks && result.landmarks.length > 0) {
+        const landmarks = result.landmarks[0];
+        const connections = HandLandmarker.HAND_CONNECTIONS;
+
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = debugDataRef.current.pinching ? "#ffff00" : "#00ff00";
+        ctx.fillStyle = "#ff0000";
+
+        // Draw connectors
+        for (const conn of connections) {
+          const p1 = landmarks[conn.start];
+          const p2 = landmarks[conn.end];
+          ctx.beginPath();
+          ctx.moveTo(p1.x * canvas.width, p1.y * canvas.height);
+          ctx.lineTo(p2.x * canvas.width, p2.y * canvas.height);
+          ctx.stroke();
+        }
+
+        // Draw points
+        for (const p of landmarks) {
+          ctx.beginPath();
+          ctx.arc(p.x * canvas.width, p.y * canvas.height, 5, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+
+      // --- Draw Stats Bar (Bottom, Unflipped Text) ---
+      // Increased height and font size for visibility
+      const barHeight = 60; 
+      const yPos = canvas.height - barHeight;
+
+      // Background
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillRect(0, yPos, canvas.width, barHeight);
+
+      // Text Settings
+      ctx.textBaseline = "middle";
+      const { x, y, pinching } = debugDataRef.current;
+      
+      // Layout
+      const padding = 20;
+      const colWidth = canvas.width / 2;
+
+      // Column 1: Coords
+      const xStr = `X:${x.toFixed(2)}`;
+      const yStr = `Y:${y.toFixed(2)}`;
+      ctx.font = "bold 24px monospace";
+      ctx.fillStyle = "#00ff00"; 
+      ctx.fillText(`${xStr}  ${yStr}`, padding, yPos + barHeight/2);
+
+      // Column 2: Pinch Status
+      const pinchText = pinching ? "GRAB: ON" : "GRAB: OFF";
+      ctx.fillStyle = pinching ? "#ffff00" : "#888"; 
+      ctx.fillText(pinchText, colWidth + padding, yPos + barHeight/2);
+    };
+
     const processGestures = (result: HandLandmarkerResult) => {
       if (!result.landmarks || result.landmarks.length === 0) return;
 
-      const landmarks = result.landmarks[0]; // First hand
+      const landmarks = result.landmarks[0]; 
 
       // Helper: Distance squared
       const distSq = (p1: any, p2: any) => (p1.x - p2.x)**2 + (p1.y - p2.y)**2 + (p1.z - p2.z)**2;
 
       // 1. Calculate Hand Position & Zoom
-      // X/Y: Center of palm (Average of wrist 0 and Middle Finger MCP 9)
-      // Normalize to -1 to 1 (inverted X because of mirror effect)
       const centerX = (landmarks[0].x + landmarks[9].x) / 2;
       const centerY = (landmarks[0].y + landmarks[9].y) / 2;
       
-      const palmX = -(centerX - 0.5) * 2; 
-      // MediaPipe中 y=0 是顶部，y=1 是底部。
-      // 我们希望 手在顶部(y小) -> 输出负值(-1) -> 对应3D中的上方/仰角
-      const palmY = (centerY - 0.5) * 2;
+      const palmX = (0.5 - centerX) * 2; 
+      const palmY = (0.5 - centerY) * 2;
 
-      // Z: Estimate based on palm size (distance between wrist and middle finger MCP)
-      // Typical size in frame: 0.1 (far) to 0.4 (close)
       const palmSize = Math.sqrt(distSq(landmarks[0], landmarks[9]));
-      // Map 0.1->0.4 to 0->1 approximately
       const zoomFactor = Math.min(Math.max((palmSize - 0.1) * 3.33, 0), 1);
 
       onHandMove(palmX, palmY, zoomFactor);
+      
+      // Update debug ref
+      debugDataRef.current.x = palmX;
+      debugDataRef.current.y = palmY;
+      debugDataRef.current.z = zoomFactor;
 
       // 2. Gesture Recognition
-      
       const thumbTip = landmarks[4];
       const indexTip = landmarks[8];
       const wrist = landmarks[0];
 
-      // Check for Fist (All fingers curled towards wrist/palm)
-      // Simple heuristic: Tips are close to wrist or lower than PIP joints
       const isFingerCurled = (tipIdx: number, pipIdx: number) => {
         return distSq(landmarks[tipIdx], wrist) < distSq(landmarks[pipIdx], wrist);
       };
@@ -107,33 +192,65 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
         isFingerCurled(16, 13) && 
         isFingerCurled(20, 17);
 
-      // Check for Pinch (Thumb and Index close)
       const pinchDist = Math.sqrt(distSq(thumbTip, indexTip));
-      // 调整灵敏度：0.06 (比0.08略低，比0.05高，平衡稳定性)
-      const isPinching = pinchDist < 0.06;
+      
+      // --- HYSTERESIS LOGIC ---
+      // Use different thresholds for entering and exiting pinch state
+      // This prevents "flickering" or snapping back when near the boundary.
+      const PINCH_ENTER_THRESHOLD = 0.05; // Needs to be close to start
+      const PINCH_EXIT_THRESHOLD = 0.10;  // Needs to move apart to stop
 
-      // Check for Open Palm (Fingers extended)
+      let isPinching = wasPinchingRef.current;
+      
+      if (isPinching) {
+        // Currently pinching, check if we should stop
+        if (pinchDist > PINCH_EXIT_THRESHOLD) {
+          isPinching = false;
+        }
+      } else {
+        // Not pinching, check if we should start
+        if (pinchDist < PINCH_ENTER_THRESHOLD) {
+          isPinching = true;
+        }
+      }
+      
+      wasPinchingRef.current = isPinching;
+
       const isOpen = !fingersFolded && !isPinching;
 
-      // State Machine Logic
+      // Update debug ref
+      debugDataRef.current.pinching = isPinching;
+
+      // State Machine Transitions
       if (fingersFolded && lastStateRef.current !== AppState.TREE) {
         lastStateRef.current = AppState.TREE;
         onStateChange(AppState.TREE);
-        onGrab(false);
-      } else if (isOpen && lastStateRef.current !== AppState.SCATTERED) {
-        // If we were viewing a photo, open palm releases it back to scattered
-        lastStateRef.current = AppState.SCATTERED;
-        onStateChange(AppState.SCATTERED);
+        onGrab(false); // Force grab release
+      } else if (isOpen) {
+        // If hand is fully open, ensure we are in SCATTERED state
+        // and force grab to false. This fixes the "stuck in pinch" issue.
+        if (lastStateRef.current !== AppState.SCATTERED) {
+            lastStateRef.current = AppState.SCATTERED;
+            onStateChange(AppState.SCATTERED);
+        }
+        // Always force release if hand is detected as Open
+        if (isPinching) {
+            // Edge case: pinch logic says yes, but open logic says yes (unlikely but possible if thumb is close)
+            // Prioritize Open Hand for navigation
+            isPinching = false; 
+            wasPinchingRef.current = false;
+        }
         onGrab(false);
       }
 
-      // Grab Logic (Independent trigger or state modifier)
-      if (isPinching) {
-        // 只在打散或查看照片状态下允许抓取
+      debugDataRef.current.state = lastStateRef.current;
+
+      // Only allow grabbing if we aren't in Tree mode and not forcing open
+      if (isPinching && !fingersFolded) {
         if (lastStateRef.current === AppState.SCATTERED || lastStateRef.current === AppState.PHOTO_VIEW) {
            onGrab(true);
         }
-      } else {
+      } else if (!isPinching) {
         onGrab(false);
       }
     };
@@ -151,21 +268,24 @@ export const HandController: React.FC<HandControllerProps> = ({ onStateChange, o
   }, []);
 
   return (
-    <div className="absolute top-4 right-4 w-48 h-36 bg-black/50 rounded-lg overflow-hidden border border-amber-500/30 shadow-lg z-50">
+    <div className="absolute top-4 right-4 w-64 h-48 bg-black/50 rounded-lg overflow-hidden border border-amber-500/30 shadow-lg z-50">
       <video 
         ref={videoRef} 
-        className={`w-full h-full object-cover transform -scale-x-100 ${loaded ? 'opacity-80' : 'opacity-0'}`} 
+        className={`absolute inset-0 w-full h-full object-cover transform -scale-x-100 ${loaded ? 'opacity-60' : 'opacity-0'}`} 
         playsInline 
         muted
       />
+      {/* Canvas for drawing skeleton, also mirrored to match video */}
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full object-cover transform -scale-x-100 pointer-events-none"
+      />
+      
       {!loaded && (
         <div className="absolute inset-0 flex items-center justify-center text-amber-500 text-xs">
           启动相机中...
         </div>
       )}
-      <div className="absolute bottom-1 left-2 text-[10px] text-white font-mono">
-        状态: {loaded ? "追踪中" : "初始化"}
-      </div>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { InstancedMesh, Object3D, Vector3, TextureLoader, Mesh, Color, Euler, Quaternion, Raycaster, Vector2 } from 'three';
 import { Sparkles } from '@react-three/drei';
@@ -23,7 +23,7 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
 }) => {
   const meshRef = useRef<InstancedMesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
-  const { camera, raycaster, scene } = useThree();
+  const { camera, raycaster } = useThree();
 
   // Generate static data for the tree shape
   const particles = useMemo(() => generateTreePositions(CONFIG.PARTICLE_COUNT), []);
@@ -43,6 +43,13 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
   // Animation Refs
   const currentLerp = useRef(0); // 0 = Tree, 1 = Scattered
 
+  // Reset active photo if app state changes to SCATTERED from outside (e.g. hand opened)
+  useEffect(() => {
+    if (appState === AppState.SCATTERED) {
+       setActivePhoto(null);
+    }
+  }, [appState]);
+
   useFrame((state, delta) => {
     if (!meshRef.current) return;
 
@@ -53,18 +60,14 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
     // 2. Refined Camera Control (Spherical Orbit)
     if (appState === AppState.SCATTERED) {
       // Map hand X/Y to spherical angles
-      // X maps to Theta (horizontal rotation)
-      const theta = handPos.x * Math.PI; // -PI to PI
+      // Reduced sensitivity significantly (0.2) to prevent "chasing" the object
+      const theta = handPos.x * (Math.PI * 0.2); 
       
-      // Y maps to Phi (vertical rotation). 
-      // y is now -1 (Top) to 1 (Bottom).
-      // Center (0) -> PI/2 (Horizon).
-      // Top (-1) -> PI/2 - PI/3 = PI/6 (High Angle).
-      // Bottom (1) -> PI/2 + PI/3 = 5PI/6 (Low Angle).
-      const phi = Math.PI / 2 + (handPos.y * Math.PI / 3); 
+      // Vertical tilt
+      const phi = Math.PI / 2 - (handPos.y * Math.PI / 8); 
 
       // Z maps to Radius (Zoom)
-      const zoomRadius = CONFIG.CAMERA_Z - (handPos.z * 10); 
+      const zoomRadius = CONFIG.CAMERA_Z - (handPos.z * 5); 
 
       const targetPos = new Vector3();
       targetPos.setFromSphericalCoords(zoomRadius, phi, theta);
@@ -152,43 +155,34 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
     });
 
     // 5. Interaction Logic (Grabbing with Raycaster)
-    // Only verify grab if we are scattered and trying to grab (or already viewing)
     if (appState === AppState.SCATTERED && isGrabbing && activePhoto === null) {
-       // Convert handPos to NDC for Raycaster
-       // handPos.x: -1 (Left) to 1 (Right) => Matches NDC x
-       // handPos.y: -1 (Top) to 1 (Bottom) => Invert for NDC y (Top is 1)
-       const ndc = new Vector2(handPos.x, -handPos.y);
-       
+       const ndc = new Vector2(handPos.x, handPos.y); 
        raycaster.setFromCamera(ndc, camera);
        
-       // Filter out null refs
        const validMeshes = photoRefs.current.filter(m => m !== null) as Object3D[];
-       const intersects = raycaster.intersectObjects(validMeshes, false);
+       
+       // CRITICAL FIX: recursive must be TRUE because photoRefs are Groups containing Meshes
+       const intersects = raycaster.intersectObjects(validMeshes, true);
 
        if (intersects.length > 0) {
-         // Find the index of the intersected object
-         const object = intersects[0].object;
-         // Handle group or mesh hit
-         // Note: object might be a child mesh of the group. We need to find the parent Group.
-         let hitGroup = object;
-         if (object.parent && object.parent.type === 'Group') {
-            hitGroup = object.parent;
+         // Traverse up to find the group logic handled in setRef
+         let hitObject: Object3D | null = intersects[0].object;
+         
+         // Find the root group that matches one of our refs
+         while (hitObject && !photoRefs.current.includes(hitObject as Mesh)) {
+            hitObject = hitObject.parent;
          }
 
-         // We are comparing the Group ref, because setRef in PhotoMesh is on the Group
-         const index = photoRefs.current.indexOf(hitGroup as Mesh);
-         
-         if (index !== -1) {
-           setActivePhoto(index);
-           onPhotoSelect(index); // Trigger state change in App
+         if (hitObject) {
+            const index = photoRefs.current.indexOf(hitObject as Mesh);
+            if (index !== -1) {
+                setActivePhoto(index);
+                onPhotoSelect(index); 
+            }
          }
        }
-    } else if (!isGrabbing && appState === AppState.SCATTERED) {
-      // Logic for releasing
-      setActivePhoto(null);
     } else if (appState === AppState.PHOTO_VIEW && !isGrabbing) {
-      // If we are in PHOTO_VIEW but not grabbing, we should release
-      // This state usually handled by App switching state back to SCATTERED
+      // Only release photo if not grabbing anymore
       setActivePhoto(null);
     }
   });
@@ -228,7 +222,6 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
 
 const PhotoMesh = ({ src, index, setRef }: { src: string, index: number, setRef: (el: Mesh | null) => void }) => {
   const texture = useMemo(() => new TextureLoader().load(src), [src]);
-  // Add a slightly larger invisible hit area or make the photo easier to grab
   return (
     <group ref={setRef}>
        <mesh>
@@ -245,9 +238,9 @@ const PhotoMesh = ({ src, index, setRef }: { src: string, index: number, setRef:
          <boxGeometry args={[1.05, 1.05, 0.05]} />
          <meshStandardMaterial color="#fff" roughness={0.1} metalness={0.5} />
        </mesh>
-       {/* Hit Box for easier raycasting */}
+       {/* Invisible Hit Area - made slightly larger for easier grabbing */}
        <mesh visible={false}>
-         <sphereGeometry args={[0.8]} />
+         <sphereGeometry args={[1.5]} />
        </mesh>
     </group>
   );

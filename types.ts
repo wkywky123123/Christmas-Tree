@@ -31,6 +31,22 @@ export interface GestureContextType {
 
 declare global {
   namespace JSX {
-    interface IntrinsicElements extends ThreeElements {}
+    interface IntrinsicElements extends ThreeElements {
+      instancedMesh: any;
+      sphereGeometry: any;
+      meshStandardMaterial: any;
+      group: any;
+      mesh: any;
+      planeGeometry: any;
+      boxGeometry: any;
+      ambientLight: any;
+      pointLight: any;
+      spotLight: any;
+      points: any;
+      bufferGeometry: any;
+      bufferAttribute: any;
+      pointsMaterial: any;
+      color: any;
+    }
   }
 }

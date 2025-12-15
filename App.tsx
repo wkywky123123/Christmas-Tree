@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Scene } from './components/Scene';
 import { HandController } from './components/HandController';
 import { AppState } from './types';
@@ -15,9 +15,24 @@ const DEFAULT_PHOTOS = [
 
 function App() {
   const [appState, setAppState] = useState<AppState>(AppState.TREE);
-  const [photos, setPhotos] = useState<string[]>(DEFAULT_PHOTOS);
+  const [photos] = useState<string[]>(DEFAULT_PHOTOS);
   const [handPos, setHandPos] = useState({ x: 0, y: 0, z: 0 });
   const [isGrabbing, setIsGrabbing] = useState(false);
+  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
+
+  // Check screen size
+  useEffect(() => {
+    const checkOrientation = () => {
+      const isPortrait = window.innerHeight > window.innerWidth;
+      const isNarrow = window.innerWidth < 768;
+      setIsMobilePortrait(isNarrow && isPortrait);
+    };
+
+    window.addEventListener('resize', checkOrientation);
+    checkOrientation();
+
+    return () => window.removeEventListener('resize', checkOrientation);
+  }, []);
 
   // Handlers
   const handleStateChange = useCallback((newState: AppState) => {
@@ -30,27 +45,28 @@ function App() {
 
   const handleGrab = useCallback((grab: boolean) => {
     setIsGrabbing(grab);
-    // 逻辑变更：不要在这里直接切换到 PHOTO_VIEW。
-    // 这里只记录抓取意图。具体的照片选中逻辑由 MagicTree 计算后触发 handlePhotoSelect。
-    // 但是，如果是从 PHOTO_VIEW 释放（松开手指），则需要切回 SCATTERED。
     if (!grab && appState === AppState.PHOTO_VIEW) {
        setAppState(AppState.SCATTERED);
     }
   }, [appState]);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const url = URL.createObjectURL(e.target.files[0]);
-      setPhotos(prev => [...prev, url]);
-    }
-  };
-
   const handlePhotoSelect = (index: number) => {
-    // 当 MagicTree 确认抓到了某张照片时调用
     if (appState === AppState.SCATTERED) {
       setAppState(AppState.PHOTO_VIEW);
     }
   };
+
+  if (isMobilePortrait) {
+    return (
+      <div className="w-full h-full bg-black flex flex-col items-center justify-center p-8 text-center">
+        <div className="w-16 h-16 border-2 border-amber-500 rounded-lg mb-6 animate-pulse flex items-center justify-center">
+           <div className="w-12 h-0.5 bg-amber-500 transform rotate-90"></div>
+        </div>
+        <h1 className="text-2xl font-serif text-amber-400 mb-4">请旋转屏幕</h1>
+        <p className="text-gray-300">为了获得最佳的3D手势体验，<br/>建议横屏使用或使用宽屏设备（电脑/平板）。</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full relative font-sans text-white">
@@ -79,14 +95,6 @@ function App() {
           <p className="text-sm text-gray-300 mt-2 opacity-80 max-w-md">
             挥手成林，捏合取景。用手势体验3D节日奇迹。
           </p>
-        </div>
-
-        {/* Upload Button */}
-        <div className="pointer-events-auto">
-          <label className="cursor-pointer bg-gradient-to-r from-red-800 to-red-600 hover:from-red-700 hover:to-red-500 text-white py-2 px-6 rounded-full shadow-lg border border-amber-500/50 flex items-center gap-2 transition-all transform hover:scale-105 active:scale-95">
-            <span className="text-xl">+</span> 添加回忆
-            <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-          </label>
         </div>
       </div>
 
@@ -123,7 +131,7 @@ function App() {
         className={`absolute w-8 h-8 rounded-full border-2 border-amber-400 transition-all duration-75 pointer-events-none transform -translate-x-1/2 -translate-y-1/2 shadow-[0_0_15px_rgba(255,215,0,0.8)] z-40 flex items-center justify-center ${isGrabbing ? 'scale-75 bg-amber-400/50' : 'scale-100'}`}
         style={{ 
           left: `${(handPos.x + 1) * 50}%`, 
-          top: `${(handPos.y + 1) * 50}%`,
+          top: `${(-handPos.y + 1) * 50}%`, /* Visual cursor Y needs inversion from NDC */
           opacity: handPos.x === 0 && handPos.y === 0 ? 0 : 1
         }}
       >
