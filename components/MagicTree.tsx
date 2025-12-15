@@ -55,14 +55,17 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
     currentLerp.current += (targetLerp - currentLerp.current) * delta * 2; 
 
     if (appState === AppState.SCATTERED) {
-      const theta = handPos.x * (Math.PI * 0.2); 
-      const phi = Math.PI / 2 - (handPos.y * Math.PI / 8); 
+      // Adjusted sensitivity for more deliberate movement
+      // Reduced multipliers to make rotation less extreme
+      const theta = handPos.x * (Math.PI * 0.15); // Reduced from 0.2
+      const phi = Math.PI / 2 - (handPos.y * Math.PI / 12); // Reduced from pi/8
       const zoomRadius = CONFIG.CAMERA_Z - (handPos.z * 5); 
 
       const targetPos = new Vector3();
       targetPos.setFromSphericalCoords(zoomRadius, phi, theta);
 
-      camera.position.lerp(targetPos, delta * 2);
+      // Lower lerp factor (from 2 to 0.8) adds 'weight' and smoothness
+      camera.position.lerp(targetPos, delta * 0.8);
       camera.lookAt(0, 0, 0);
 
     } else if (appState === AppState.TREE) {
