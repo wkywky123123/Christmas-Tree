@@ -22,6 +22,10 @@ const files = [
   {
     url: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm/vision_wasm_internal.js',
     dest: path.join(wasmDir, 'vision_wasm_internal.js')
+  },
+  {
+    url: 'https://raw.githubusercontent.com/pmndrs/drei-assets/master/hdri/potsdamer_platz_1k.hdr',
+    dest: path.join(modelsDir, 'potsdamer_platz_1k.hdr')
   }
 ];
 
@@ -42,7 +46,6 @@ async function download(url, dest) {
     const file = fs.createWriteStream(dest);
     https.get(url, (response) => {
       if (response.statusCode === 301 || response.statusCode === 302) {
-         // Simple redirect handling if needed, though direct links usually work
          download(response.headers.location, dest).then(resolve).catch(reject);
          return;
       }
@@ -63,14 +66,13 @@ async function download(url, dest) {
 }
 
 async function main() {
-  console.log('--- Starting Model Download ---');
+  console.log('--- Starting Asset Download ---');
   try {
     await Promise.all(files.map(f => download(f.url, f.dest)));
-    console.log('--- All models downloaded successfully ---');
+    console.log('--- All assets downloaded successfully ---');
   } catch (err) {
-    console.error('Error downloading models:', err);
-    // Important: Don't break the build locally if developer has network issues, 
-    // but on Vercel this usually succeeds.
+    console.error('Error downloading assets:', err);
+    // Don't fail build on CI if network is temporary flaky, but logs will show error
     if (process.env.CI) {
       process.exit(1); 
     }

@@ -31,7 +31,8 @@ export const Scene: React.FC<SceneProps> = (props) => {
 
           {/* Environmental Effects */}
           <SnowParticles count={300} />
-          <Environment preset="city" />
+          {/* Use local HDR file to prevent network timeouts in restricted regions */}
+          <Environment files="/models/potsdamer_platz_1k.hdr" />
           <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
         </Suspense>
 
