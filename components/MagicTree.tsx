@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useTexture } from '@react-three/drei';
-import { InstancedMesh, Object3D, Vector3, Mesh, Color, Euler, Quaternion, Raycaster, Vector2, RepeatWrapping } from 'three';
+import { InstancedMesh, Object3D, Vector3, Mesh, Color, Euler, Quaternion, Raycaster, Vector2, Group } from 'three';
 import { Sparkles } from '@react-three/drei';
 import { CONFIG, COLORS } from '../constants';
 import { AppState } from '../types';
@@ -45,7 +45,7 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
     });
   }, [particles, photos.length]);
 
-  const photoRefs = useRef<(Mesh | null)[]>([]);
+  const photoRefs = useRef<(Object3D | null)[]>([]);
   const [activePhoto, setActivePhoto] = useState<number | null>(null);
 
   const currentLerp = useRef(0);
@@ -133,8 +133,8 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
 
     // --- Photo Update Logic ---
-    photoRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
+    photoRefs.current.forEach((obj, i) => {
+      if (!obj) return;
       
       const t = currentLerp.current;
       const slotIndex = i % particles.length; 
@@ -159,9 +159,9 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
          targetRot = camera.quaternion.clone();
       }
 
-      mesh.position.lerp(targetPos, delta * 3);
-      mesh.scale.setScalar(mesh.scale.x + (targetScale - mesh.scale.x) * delta * 3);
-      mesh.quaternion.slerp(targetRot, delta * 3);
+      obj.position.lerp(targetPos, delta * 3);
+      obj.scale.setScalar(obj.scale.x + (targetScale - obj.scale.x) * delta * 3);
+      obj.quaternion.slerp(targetRot, delta * 3);
     });
 
     if (appState === AppState.SCATTERED && isGrabbing && activePhoto === null) {
@@ -173,11 +173,11 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
 
        if (intersects.length > 0) {
          let hitObject: Object3D | null = intersects[0].object;
-         while (hitObject && !photoRefs.current.includes(hitObject as Mesh)) {
+         while (hitObject && !photoRefs.current.includes(hitObject as Object3D)) {
             hitObject = hitObject.parent;
          }
          if (hitObject) {
-            const index = photoRefs.current.indexOf(hitObject as Mesh);
+            const index = photoRefs.current.indexOf(hitObject as Object3D);
             if (index !== -1) {
                 setActivePhoto(index);
                 onPhotoSelect(index); 
@@ -237,7 +237,13 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
 };
 
 // PhotoMesh using useTexture for Preloading support
-const PhotoMesh = ({ src, index, setRef }: { src: string, index: number, setRef: (el: Mesh | null) => void }) => {
+interface PhotoMeshProps {
+  src: string;
+  index: number;
+  setRef: (el: Object3D | null) => void;
+}
+
+const PhotoMesh: React.FC<PhotoMeshProps> = ({ src, index, setRef }) => {
   // useTexture is suspense-aware and reports to useProgress
   const texture = useTexture(src);
   
