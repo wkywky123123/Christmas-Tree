@@ -38,21 +38,35 @@ const LoadingScreen = ({
   hasStarted: boolean;
 }) => {
   const [displayProgress, setDisplayProgress] = useState(0);
+  const progressRef = useRef(0);
 
-  // Smooth progress interpolation
+  // Sync ref with prop
+  useEffect(() => {
+    progressRef.current = loadingProgress;
+  }, [loadingProgress]);
+
+  // Smooth progress interpolation loop
   useEffect(() => {
     let animFrame: number;
     const update = () => {
       setDisplayProgress(prev => {
-        const diff = loadingProgress - prev;
-        if (Math.abs(diff) < 0.5) return loadingProgress;
-        return prev + diff * 0.1;
+        const target = progressRef.current;
+        const diff = target - prev;
+        
+        // If we are very close, snap (unless target is increasing significantly)
+        if (Math.abs(diff) < 0.1 && target >= prev) return target;
+        
+        // Smooth lerp: 0.08 provides a nice weight
+        return prev + diff * 0.08;
       });
       animFrame = requestAnimationFrame(update);
     };
     update();
     return () => cancelAnimationFrame(animFrame);
-  }, [loadingProgress]);
+  }, []);
+
+  // Ensure we don't show the button until the visual progress catches up
+  const showStartButton = isReady && displayProgress > 99;
 
   // If we have started, fade out
   if (hasStarted) {
@@ -65,14 +79,14 @@ const LoadingScreen = ({
         圣诞手势魔法
       </h1>
       
-      {!isReady ? (
+      {!showStartButton ? (
         <div className="w-full max-w-md flex flex-col items-center">
           <p className="text-amber-500/80 text-xs font-mono tracking-widest uppercase mb-4 animate-pulse">
             正在加载资源... {Math.round(displayProgress)}%
           </p>
           <div className="w-64 h-1 bg-gray-800 rounded-full overflow-hidden relative">
             <div 
-              className="h-full bg-amber-500 shadow-[0_0_15px_#f59e0b] transition-all duration-75 ease-linear"
+              className="h-full bg-amber-500 shadow-[0_0_15px_#f59e0b] transition-all duration-75 ease-out"
               style={{ width: `${displayProgress}%` }}
             />
           </div>
@@ -156,15 +170,17 @@ function App() {
 
   useEffect(() => {
     if (!landmarker) {
+      // Faster, smoother updates for the simulated part
       const interval = setInterval(() => {
-        setSimulatedMlProgress(prev => Math.min(prev + 1, 45));
-      }, 100);
+        setSimulatedMlProgress(prev => Math.min(prev + 0.5, 45));
+      }, 20);
       return () => clearInterval(interval);
     } else {
       setSimulatedMlProgress(50);
     }
   }, [landmarker]);
 
+  // Combine progresses
   const totalProgress = simulatedMlProgress + (textureProgress * 0.5);
   const isReady = !!landmarker && textureProgress >= 100;
 
