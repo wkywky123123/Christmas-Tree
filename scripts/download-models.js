@@ -10,10 +10,6 @@ const publicDir = path.join(rootDir, 'public');
 const modelsDir = path.join(publicDir, 'models');
 const wasmDir = path.join(modelsDir, 'wasm');
 
-// Ensure directories exist
-if (!fs.existsSync(wasmDir)) fs.mkdirSync(wasmDir, { recursive: true });
-if (!fs.existsSync(path.join(publicDir, 'img'))) fs.mkdirSync(path.join(publicDir, 'img'), { recursive: true });
-
 const files = [
   {
     url: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
@@ -33,12 +29,19 @@ const files = [
   }
 ];
 
+// Ensure directories exist
+if (!fs.existsSync(wasmDir)) {
+  fs.mkdirSync(wasmDir, { recursive: true });
+}
+
 async function download(url, dest) {
   if (fs.existsSync(dest)) {
-    console.log(`[Cache] Found: ${path.basename(dest)}`);
+    console.log(`[Cache] File already exists: ${dest}`);
     return;
   }
-  console.log(`[Download] ${url}`);
+  
+  console.log(`[Download] ${url} -> ${dest}`);
+  
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
     https.get(url, (response) => {
@@ -46,20 +49,34 @@ async function download(url, dest) {
          download(response.headers.location, dest).then(resolve).catch(reject);
          return;
       }
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download ${url}: ${response.statusCode}`));
+        return;
+      }
       response.pipe(file);
-      file.on('finish', () => { file.close(); resolve(); });
-    }).on('error', (err) => { fs.unlink(dest, () => {}); reject(err); });
+      file.on('finish', () => {
+        file.close();
+        resolve();
+      });
+    }).on('error', (err) => {
+      fs.unlink(dest, () => {}); // Delete partial file
+      reject(err);
+    });
   });
 }
 
 async function main() {
-  console.log('--- LOCALIZING ASSETS ---');
+  console.log('--- Starting Asset Download ---');
   try {
     await Promise.all(files.map(f => download(f.url, f.dest)));
-    console.log('--- ALL ASSETS LOCALIZED ---');
+    console.log('--- All assets downloaded successfully ---');
   } catch (err) {
-    console.error('Error:', err);
-    if (process.env.CI) process.exit(1);
+    console.error('Error downloading assets:', err);
+    // Don't fail build on CI if network is temporary flaky, but logs will show error
+    if (process.env.CI) {
+      process.exit(1); 
+    }
   }
 }
+
 main();

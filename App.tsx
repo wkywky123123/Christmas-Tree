@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useProgress } from '@react-three/drei';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
@@ -6,225 +5,384 @@ import { Scene } from './components/Scene';
 import { HandController } from './components/HandController';
 import { AppState } from './types';
 
-// Dynamic Image Loading from /public/img
-// Vite utility to find all images in the public folder (or specific path)
-const getDynamicImages = () => {
-  try {
-    // We assume the user puts their files in /public/img/
-    // Since glob is a build-time feature, we'll try to use a convention or a fallback
-    // In a real environment, we'd use Vite's glob on src/assets/img, 
-    // but for /public we use a list or check the folder.
-    // Let's provide a robust fallback if no images are found.
-    // Fix: cast import.meta to any to access Vite-specific 'glob' which may not be in standard ImportMeta types
-    const globbed = (import.meta as any).glob('/public/img/*.{png,jpg,jpeg,webp}', { eager: true, as: 'url' });
-    // Fix: cast url to string to allow calling string methods like 'replace'
-    const urls = Object.values(globbed).map(url => (url as string).replace('/public', ''));
-    return urls.length > 0 ? urls : [
-      "https://picsum.photos/id/10/400/400",
-      "https://picsum.photos/id/15/400/400",
-      "https://picsum.photos/id/20/400/400"
-    ];
-  } catch (e) {
-    return ["https://picsum.photos/id/10/400/400"];
-  }
-};
+// Placeholder images
+const DEFAULT_PHOTOS = [
+  "https://picsum.photos/id/10/400/400",
+  "https://picsum.photos/id/15/400/400",
+  "https://picsum.photos/id/20/400/400",
+  "https://picsum.photos/id/25/400/400",
+  "https://picsum.photos/id/30/400/400"
+];
 
-const MAGIC_MESSAGES = ["✨ 愿你的圣诞充满奇迹 ✨", "🎄 温暖、爱与和平 🎄", "❄️ 每一片雪花都是冬天的亲吻 ❄️"];
+// Local "Magic" Messages to replace AI
+const MAGIC_MESSAGES = [
+  "✨ 愿你的圣诞充满奇迹与光芒 ✨",
+  "🎄 温暖、爱与和平常伴你左右 🎄",
+  "❄️ 每一片雪花都是冬天的亲吻 ❄️",
+  "🎁 最好的礼物是彼此的陪伴 🎁",
+  "⭐ 星光照亮你前行的道路 ⭐",
+  "🔔 铃声响起，好运将至 🔔",
+  "🦌 快乐如驯鹿般奔跑而来 🦌"
+];
 
-const fetchWithProgress = async (url: string, onProgress: (loaded: number, total: number) => void) => {
-  const response = await fetch(url);
-  const reader = response.body?.getReader();
-  const contentLength = +(response.headers.get('Content-Length') ?? 0);
-  
-  let receivedLength = 0;
-  while(reader) {
-    const {done, value} = await reader.read();
-    if (done) break;
-    receivedLength += value.length;
-    onProgress(receivedLength, contentLength);
-  }
-  return url;
-};
-
+// --- LOADING SCREEN COMPONENT ---
 const LoadingScreen = ({ 
-  phase1, phase2, onStart, hasStarted 
+  isReady, 
+  onStart, 
+  loadingProgress,
+  hasStarted
 }: { 
-  phase1: number; phase2: number; onStart: () => void; hasStarted: boolean 
+  isReady: boolean; 
+  onStart: () => void; 
+  loadingProgress: number;
+  hasStarted: boolean;
 }) => {
-  const [smoothP1, setSmoothP1] = useState(0);
-  const [smoothP2, setSmoothP2] = useState(0);
+  const [displayProgress, setDisplayProgress] = useState(0);
+  const progressRef = useRef(0);
 
+  // Sync ref with prop
   useEffect(() => {
-    let frame: number;
-    const lerp = () => {
-      setSmoothP1(p => p + (phase1 - p) * 0.1);
-      setSmoothP2(p => p + (phase2 - p) * 0.1);
-      frame = requestAnimationFrame(lerp);
+    progressRef.current = loadingProgress;
+  }, [loadingProgress]);
+
+  // Smooth progress interpolation loop
+  useEffect(() => {
+    let animFrame: number;
+    const update = () => {
+      setDisplayProgress(prev => {
+        const target = progressRef.current;
+        const diff = target - prev;
+        
+        // If we are very close, snap (unless target is increasing significantly)
+        if (Math.abs(diff) < 0.1 && target >= prev) return target;
+        
+        // Smooth lerp: 0.08 provides a nice weight
+        return prev + diff * 0.08;
+      });
+      animFrame = requestAnimationFrame(update);
     };
-    lerp();
-    return () => cancelAnimationFrame(frame);
-  }, [phase1, phase2]);
+    update();
+    return () => cancelAnimationFrame(animFrame);
+  }, []);
 
-  if (hasStarted) return null;
+  // Ensure we don't show the button until the visual progress catches up
+  const showStartButton = isReady && displayProgress > 99;
 
-  const isComplete = smoothP2 > 99;
+  // If we have started, fade out
+  if (hasStarted) {
+    return null;
+  }
 
   return (
-    <div className="absolute inset-0 z-[100] bg-black flex flex-col items-center justify-center p-6 text-white font-serif">
-      <h1 className="text-4xl md:text-6xl text-amber-400 mb-12 drop-shadow-[0_0_20px_rgba(255,215,0,0.5)]">
-        圣诞魔法加载中
+    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 to-black">
+      <h1 className="text-5xl font-serif text-amber-400 mb-6 drop-shadow-[0_0_15px_rgba(255,215,0,0.6)] animate-fade-in-up">
+        圣诞手势魔法
       </h1>
-
-      <div className="w-full max-w-sm space-y-10">
-        {/* Phase 1: Core Assets */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-[10px] uppercase tracking-[0.2em] text-blue-400">
-            <span>基础资源初始化</span>
-            <span>{Math.round(smoothP1)}%</span>
-          </div>
-          <div className="h-[2px] w-full bg-blue-900/30 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 shadow-[0_0_10px_#3b82f6]" style={{ width: `${smoothP1}%` }} />
-          </div>
-        </div>
-
-        {/* Phase 2: Magic Engine */}
-        <div className={`space-y-2 transition-opacity duration-500 ${smoothP1 > 90 ? 'opacity-100' : 'opacity-20'}`}>
-          <div className="flex justify-between text-[10px] uppercase tracking-[0.2em] text-amber-400">
-            <span>正在注入 3D 魔法引擎</span>
-            <span>{Math.round(smoothP2)}%</span>
-          </div>
-          <div className="h-[2px] w-full bg-amber-900/30 rounded-full overflow-hidden">
-            <div className="h-full bg-amber-500 shadow-[0_0_10px_#f59e0b]" style={{ width: `${smoothP2}%` }} />
-          </div>
-        </div>
-      </div>
-
-      {isComplete && (
-        <button 
-          onClick={onStart}
-          className="mt-16 px-12 py-4 border border-amber-500/50 rounded-full text-amber-400 uppercase tracking-widest hover:bg-amber-500/10 hover:shadow-[0_0_30px_rgba(255,215,0,0.3)] transition-all animate-fade-in"
-        >
-          进入魔法世界
-        </button>
-      )}
       
-      <p className="mt-8 text-gray-600 text-[10px] uppercase tracking-tighter">
-        建议横屏获得最佳沉浸感
-      </p>
+      {!showStartButton ? (
+        <div className="w-full max-w-md flex flex-col items-center">
+          <p className="text-amber-500/80 text-xs font-mono tracking-widest uppercase mb-4 animate-pulse">
+            正在加载资源... {Math.round(displayProgress)}%
+          </p>
+          <div className="w-64 h-1 bg-gray-800 rounded-full overflow-hidden relative">
+            <div 
+              className="h-full bg-amber-500 shadow-[0_0_15px_#f59e0b] transition-all duration-75 ease-out"
+              style={{ width: `${displayProgress}%` }}
+            />
+          </div>
+          <p className="text-gray-600 text-[10px] mt-4 font-mono">
+            {displayProgress < 50 ? "初始化AI模型..." : "加载3D场景纹理..."}
+          </p>
+        </div>
+      ) : (
+        <div className="animate-fade-in">
+           <p className="text-gray-300 mb-12 max-w-md leading-relaxed">
+            资源加载完成。<br/>
+            挥手成林，捏合取景。<br/>
+            点击下方按钮开启体验。
+          </p>
+          <button 
+            onClick={onStart}
+            className="group relative px-10 py-4 bg-transparent border border-amber-500/50 rounded-full overflow-hidden transition-all hover:border-amber-400 hover:shadow-[0_0_30px_rgba(255,215,0,0.4)] active:scale-95"
+          >
+            <div className="absolute inset-0 bg-amber-500/10 group-hover:bg-amber-500/20 transition-all"></div>
+            <span className="relative text-amber-400 font-bold tracking-widest uppercase text-sm flex items-center gap-2">
+              开启魔法
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
 
-export default function App() {
+function App() {
   const [appState, setAppState] = useState<AppState>(AppState.TREE);
-  const [photos] = useState<string[]>(getDynamicImages());
-  const [hasStarted, setHasStarted] = useState(false);
-  const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [photos] = useState<string[]>(DEFAULT_PHOTOS);
   
-  const [phase1Progress, setPhase1Progress] = useState(0);
-  const [phase2Progress, setPhase2Progress] = useState(0);
+  // App Logic State
+  const [hasStarted, setHasStarted] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
+  
+  // Message State
+  const [magicMessage, setMagicMessage] = useState<string>("");
+  
+  // 3D Loading Progress
+  const { progress: textureProgress } = useProgress();
 
-  const handPosRef = useRef({ x: 0, y: 0, z: 0 });
+  // RAW Data from MediaPipe (updates at ~30fps)
+  const targetHandPosRef = useRef({ x: 0, y: 0, z: 0 });
+  // SMOOTHED Data for Rendering
+  const smoothedHandPosRef = useRef({ x: 0, y: 0, z: 0 });
+  const cursorRef = useRef<HTMLDivElement>(null);
+  
   const [isGrabbing, setIsGrabbing] = useState(false);
-  const [magicMsg, setMagicMsg] = useState("");
+  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
+  const [isInstructionsOpen, setIsInstructionsOpen] = useState(true);
 
-  // Step 1: Initialize Stage 1 (Fake progress for UI assets, but linked to image loading)
+  // Initialize MediaPipe immediately on mount
   useEffect(() => {
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += (Math.random() * 5);
-      if (progress >= 100) {
-        setPhase1Progress(100);
-        clearInterval(interval);
-      } else {
-        setPhase1Progress(progress);
-      }
-    }, 40);
-  }, []);
-
-  // Step 2: Initialize Stage 2 (Actual Large File Fetching)
-  useEffect(() => {
-    if (phase1Progress < 100) return;
-
-    const loadHeavyAssets = async () => {
+    const initMediaPipe = async () => {
       try {
-        const vision = await FilesetResolver.forVisionTasks("/models/wasm");
-        
-        // Track the model task file specifically
-        const modelUrl = "/models/hand_landmarker.task";
-        let modelPercent = 0;
-        let hdrPercent = 0;
-
-        await Promise.all([
-          // We don't actually need to "await" the bytes here, just ensure they are fetching
-          // but we do it to track real-time progress
-          fetchWithProgress(modelUrl, (loaded, total) => {
-             modelPercent = (loaded / total) * 100;
-             setPhase2Progress(modelPercent * 0.7 + hdrPercent * 0.3);
-          }),
-          fetchWithProgress("/models/potsdamer_platz_1k.hdr", (loaded, total) => {
-             hdrPercent = (loaded / total) * 100;
-             setPhase2Progress(modelPercent * 0.7 + hdrPercent * 0.3);
-          })
-        ]);
-
+        // Use local assets downloaded during build
+        const vision = await FilesetResolver.forVisionTasks(
+          "/models/wasm"
+        );
         const lm = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: modelUrl, delegate: "GPU" },
-          runningMode: "VIDEO", numHands: 1
+          baseOptions: {
+            modelAssetPath: "/models/hand_landmarker.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1
         });
-        
         setLandmarker(lm);
-        setPhase2Progress(100);
-      } catch (err) {
-        console.error(err);
+      } catch (error) {
+        console.error("Failed to load MediaPipe:", error);
       }
     };
+    initMediaPipe();
+  }, []);
 
-    loadHeavyAssets();
-  }, [phase1Progress]);
+  // Calculate Total Load Progress
+  const [simulatedMlProgress, setSimulatedMlProgress] = useState(0);
 
+  useEffect(() => {
+    if (!landmarker) {
+      // Faster, smoother updates for the simulated part
+      const interval = setInterval(() => {
+        setSimulatedMlProgress(prev => Math.min(prev + 0.5, 45));
+      }, 20);
+      return () => clearInterval(interval);
+    } else {
+      setSimulatedMlProgress(50);
+    }
+  }, [landmarker]);
+
+  // Combine progresses
+  const totalProgress = simulatedMlProgress + (textureProgress * 0.5);
+  const isReady = !!landmarker && textureProgress >= 100;
+
+  // Check screen size
+  useEffect(() => {
+    const checkOrientation = () => {
+      const isPortrait = window.innerHeight > window.innerWidth;
+      const isNarrow = window.innerWidth < 768;
+      setIsMobilePortrait(isNarrow && isPortrait);
+    };
+    window.addEventListener('resize', checkOrientation);
+    checkOrientation();
+    return () => window.removeEventListener('resize', checkOrientation);
+  }, []);
+
+  // --- START HANDLER ---
   const handleStart = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: "user" 
+        } 
+      });
       setCameraStream(stream);
       setHasStarted(true);
-    } catch (e) { alert("需要摄像头权限开启魔法"); }
+    } catch (err) {
+      console.error("Camera permission failed:", err);
+      alert("无法访问摄像头。请确保您已在浏览器设置中授予权限。");
+    }
   };
 
+  // --- SMOOTHING LOOP ---
+  useEffect(() => {
+    let rAF = 0;
+    const loop = () => {
+      const target = targetHandPosRef.current;
+      const current = smoothedHandPosRef.current;
+      const lerpFactor = 0.15;
+
+      current.x += (target.x - current.x) * lerpFactor;
+      current.y += (target.y - current.y) * lerpFactor;
+      current.z += (target.z - current.z) * lerpFactor;
+
+      if (cursorRef.current) {
+        const cursor = cursorRef.current;
+        const left = (current.x + 1) * 50;
+        const top = (-current.y + 1) * 50;
+        cursor.style.left = `${left}%`;
+        cursor.style.top = `${top}%`;
+        
+        const isCenter = Math.abs(current.x) < 0.001 && Math.abs(current.y) < 0.001;
+        cursor.style.opacity = isCenter ? '0' : '1';
+      }
+      rAF = requestAnimationFrame(loop);
+    };
+    loop();
+    return () => cancelAnimationFrame(rAF);
+  }, []);
+
+  // Handlers
+  const handleStateChange = useCallback((newState: AppState) => {
+    setAppState(newState);
+    
+    // Trigger local "Magic Message" when scattered
+    if (newState === AppState.SCATTERED) {
+      const randomMsg = MAGIC_MESSAGES[Math.floor(Math.random() * MAGIC_MESSAGES.length)];
+      setMagicMessage(randomMsg);
+      // Clear message after 5 seconds
+      setTimeout(() => setMagicMessage(""), 5000);
+    }
+  }, []);
+
+  const handleHandMove = useCallback((x: number, y: number, z: number) => {
+    targetHandPosRef.current = { x, y, z };
+  }, []);
+
+  const handleGrab = useCallback((grab: boolean) => {
+    setIsGrabbing(grab);
+    if (!grab && appState === AppState.PHOTO_VIEW) {
+       setAppState(AppState.SCATTERED);
+    }
+  }, [appState]);
+
+  const handlePhotoSelect = (index: number) => {
+    if (appState === AppState.SCATTERED) {
+      setAppState(AppState.PHOTO_VIEW);
+    }
+  };
+
+  if (isMobilePortrait) {
+    return (
+      <div className="w-full h-full bg-black flex flex-col items-center justify-center p-8 text-center">
+        <div className="w-16 h-16 border-2 border-amber-500 rounded-lg mb-6 animate-pulse flex items-center justify-center">
+           <div className="w-12 h-0.5 bg-amber-500 transform rotate-90"></div>
+        </div>
+        <h1 className="text-2xl font-serif text-amber-400 mb-4">请旋转屏幕</h1>
+        <p className="text-gray-300">为了获得最佳的3D手势体验，<br/>建议横屏使用或使用宽屏设备（电脑/平板）。</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full h-full relative overflow-hidden bg-black">
+    <div className="w-full h-full relative font-sans text-white">
+      {/* LOADING & ENTRY OVERLAY */}
       <LoadingScreen 
-        phase1={phase1Progress} 
-        phase2={phase2Progress} 
-        onStart={handleStart} 
-        hasStarted={hasStarted} 
+        isReady={isReady} 
+        onStart={handleStart}
+        loadingProgress={totalProgress}
+        hasStarted={hasStarted}
       />
 
+      {/* 3D Scene Layer */}
       <Scene 
         appState={appState} 
         photos={photos} 
-        handPosRef={handPosRef} 
-        isGrabbing={isGrabbing} 
-        onPhotoSelect={() => setAppState(AppState.PHOTO_VIEW)}
+        handPosRef={smoothedHandPosRef}
+        isGrabbing={isGrabbing}
+        onPhotoSelect={handlePhotoSelect}
       />
 
+      {/* Hand Tracking Layer - Active when stream & model are ready */}
       {cameraStream && landmarker && (
         <HandController 
-          cameraStream={cameraStream} 
+          cameraStream={cameraStream}
           landmarker={landmarker}
-          onStateChange={setAppState}
-          onHandMove={(x,y,z) => { handPosRef.current = {x,y,z} }}
-          onGrab={setIsGrabbing}
+          onStateChange={handleStateChange}
+          onHandMove={handleHandMove}
+          onGrab={handleGrab}
         />
       )}
 
-      {/* Logic for random messages */}
-      <div className={`absolute top-1/3 left-0 w-full text-center pointer-events-none transition-opacity duration-1000 ${appState === AppState.SCATTERED ? 'opacity-100' : 'opacity-0'}`}>
-         <h2 className="text-3xl text-amber-200 font-serif drop-shadow-glow">
-           {MAGIC_MESSAGES[0]}
-         </h2>
+      {/* Magic Message Overlay */}
+      <div className={`absolute top-1/4 left-0 w-full flex justify-center pointer-events-none transition-opacity duration-1000 ${magicMessage ? 'opacity-100' : 'opacity-0'}`}>
+         <div className="max-w-3xl text-center px-6">
+            <h2 className="text-3xl md:text-5xl font-serif text-amber-300 text-shadow-glow animate-pulse leading-normal">
+              {magicMessage}
+            </h2>
+         </div>
+      </div>
+
+      {/* UI Overlay - Only show when started */}
+      {hasStarted && (
+        <>
+          <div className="absolute top-0 left-0 p-6 pointer-events-none w-full flex justify-between animate-fade-in">
+            <div>
+              <h1 className="text-4xl font-serif text-amber-400 tracking-wider drop-shadow-[0_0_10px_rgba(255,215,0,0.5)]">
+                圣诞手势魔法
+              </h1>
+              <p className="text-sm text-gray-300 mt-2 opacity-80 max-w-md">
+                挥手成林，捏合取景。
+              </p>
+            </div>
+          </div>
+
+          <div className="absolute bottom-8 left-8 bg-black/40 backdrop-blur-md rounded-xl border border-white/10 max-w-sm pointer-events-auto transition-all duration-300 overflow-hidden">
+            <div 
+              onClick={() => setIsInstructionsOpen(!isInstructionsOpen)}
+              className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
+            >
+              <h3 className="text-amber-400 font-bold uppercase text-xs tracking-widest flex items-center gap-2">
+                手势指南
+                <span className={`text-[10px] text-gray-500 transition-transform duration-300 ${isInstructionsOpen ? 'rotate-180' : ''}`}>▼</span>
+              </h3>
+            </div>
+            
+            <div className={`transition-all duration-300 ease-in-out ${isInstructionsOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
+              <div className="px-6 pb-6 pt-0 space-y-3 text-sm">
+                <div className={`flex items-center gap-3 ${appState === AppState.TREE ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
+                  <div className="w-6 h-6 rounded-full border border-current flex items-center justify-center">✊</div>
+                  <span><span className="text-white">握拳:</span> 聚合圣诞树</span>
+                </div>
+                <div className={`flex items-center gap-3 ${appState === AppState.SCATTERED ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
+                  <div className="w-6 h-6 rounded-full border border-current flex items-center justify-center">🖐</div>
+                  <span><span className="text-white">张开五指:</span> 释放魔法祝语</span>
+                </div>
+                <div className={`flex items-center gap-3 ${appState === AppState.PHOTO_VIEW ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
+                  <div className="w-6 h-6 rounded-full border border-current flex items-center justify-center">👌</div>
+                  <span><span className="text-white">捏合:</span> 抓取并放大照片</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Cursor Follower */}
+      <div 
+        ref={cursorRef}
+        className={`absolute w-8 h-8 rounded-full border-2 border-amber-400 transition-transform duration-75 pointer-events-none transform -translate-x-1/2 -translate-y-1/2 shadow-[0_0_15px_rgba(255,215,0,0.8)] z-40 flex items-center justify-center ${isGrabbing ? 'scale-75 bg-amber-400/50' : 'scale-100'}`}
+        style={{ 
+          left: '50%', 
+          top: '50%',
+          opacity: 0,
+          willChange: 'left, top'
+        }}
+      >
+        <div className="w-1 h-1 bg-white rounded-full"></div>
       </div>
     </div>
   );
 }
+
+export default App;
