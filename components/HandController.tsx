@@ -112,7 +112,7 @@ export const HandController: React.FC<HandControllerProps> = ({
       if (!landmarker || !video) return;
       
       const now = performance.now();
-      // Throttle to 30FPS
+      // Throttle to 30FPS for performance
       if (now - lastPredictionTimeRef.current < 32) {
          frameIdRef.current = requestAnimationFrame(predict);
          return;
@@ -176,11 +176,12 @@ export const HandController: React.FC<HandControllerProps> = ({
       ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
       ctx.fillRect(0, yPos, canvas.width, barHeight);
       ctx.textBaseline = "middle";
-      const { dist, pinching } = debugDataRef.current;
+      const { dist, pinching, state } = debugDataRef.current;
       
-      ctx.font = "bold 16px monospace";
+      ctx.font = "bold 14px monospace";
       ctx.fillStyle = "#00ff00"; 
       ctx.fillText(`D:${dist.toFixed(2)}`, 10, yPos + barHeight/2);
+      ctx.fillText(state, 80, yPos + barHeight/2);
       ctx.fillStyle = pinching ? "#ffff00" : "#aaa"; 
       ctx.fillText(pinching ? "GRAB" : "FREE", canvas.width - 60, yPos + barHeight/2);
     };
@@ -207,27 +208,45 @@ export const HandController: React.FC<HandControllerProps> = ({
       debugDataRef.current.y = palmY;
       debugDataRef.current.z = zoomFactor;
 
-      // 2. Gesture
+      // 2. Gesture Logic (Fist Detection)
+      const wrist = landmarks[0];
       const thumbTip = landmarks[4];
       const indexTip = landmarks[8];
-      const wrist = landmarks[0];
-      const isFingerCurled = (tipIdx: number, pipIdx: number) => distSq(landmarks[tipIdx], wrist) < distSq(landmarks[pipIdx], wrist);
-      const fingersFolded = isFingerCurled(8, 5) && isFingerCurled(12, 9) && isFingerCurled(16, 13) && isFingerCurled(20, 17);
+      
+      // Helper to check if finger is curled
+      // We compare Tip distance to Wrist vs PIP (middle joint) distance to Wrist for better sensitivity
+      // Tip Indices: 8, 12, 16, 20
+      // PIP Indices (Middle Joint): 6, 10, 14, 18
+      const isFingerCurled = (tipIdx: number, pipIdx: number) => {
+        // If Tip is closer to wrist than the middle joint, it's curled
+        return distSq(landmarks[tipIdx], wrist) < distSq(landmarks[pipIdx], wrist);
+      };
 
+      // Check Index, Middle, Ring, Pinky
+      const fingersFolded = 
+        isFingerCurled(8, 6) &&   // Index
+        isFingerCurled(12, 10) && // Middle
+        isFingerCurled(16, 14) && // Ring
+        isFingerCurled(20, 18);   // Pinky
+
+      // Pinch Detection
       const pinchDist = Math.sqrt(distSq(thumbTip, indexTip));
       debugDataRef.current.dist = pinchDist;
       
+      // Hysteresis for stability
       let isPinching = wasPinchingRef.current;
       if (isPinching) {
         if (pinchDist > 0.10) isPinching = false;
       } else {
-        if (pinchDist < 0.06) isPinching = true;
+        if (pinchDist < 0.05) isPinching = true;
       }
       
       wasPinchingRef.current = isPinching;
       debugDataRef.current.pinching = isPinching;
 
+      // State Machine
       if (fingersFolded) {
+        // FIST -> TREE
         if (lastStateRef.current !== AppState.TREE) {
           lastStateRef.current = AppState.TREE;
           onStateChangeRef.current(AppState.TREE);
@@ -235,6 +254,7 @@ export const HandController: React.FC<HandControllerProps> = ({
         onGrabRef.current(false);
         wasPinchingRef.current = false; 
       } else {
+        // OPEN PALM -> SCATTERED
         if (lastStateRef.current === AppState.TREE) {
            lastStateRef.current = AppState.SCATTERED;
            onStateChangeRef.current(AppState.SCATTERED);

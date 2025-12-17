@@ -14,6 +14,17 @@ const DEFAULT_PHOTOS = [
   "https://picsum.photos/id/30/400/400"
 ];
 
+// Local "Magic" Messages to replace AI
+const MAGIC_MESSAGES = [
+  "✨ 愿你的圣诞充满奇迹与光芒 ✨",
+  "🎄 温暖、爱与和平常伴你左右 🎄",
+  "❄️ 每一片雪花都是冬天的亲吻 ❄️",
+  "🎁 最好的礼物是彼此的陪伴 🎁",
+  "⭐ 星光照亮你前行的道路 ⭐",
+  "🔔 铃声响起，好运将至 🔔",
+  "🦌 快乐如驯鹿般奔跑而来 🦌"
+];
+
 // --- LOADING SCREEN COMPONENT ---
 const LoadingScreen = ({ 
   isReady, 
@@ -100,6 +111,9 @@ function App() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
   
+  // Message State
+  const [magicMessage, setMagicMessage] = useState<string>("");
+  
   // 3D Loading Progress
   const { progress: textureProgress } = useProgress();
 
@@ -118,7 +132,7 @@ function App() {
     const initMediaPipe = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
         );
         const lm = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -137,9 +151,6 @@ function App() {
   }, []);
 
   // Calculate Total Load Progress
-  // AI Load = 50%, Texture Load = 50%
-  const mlProgress = landmarker ? 50 : 0; // Simple binary for ML part as we can't track download easily
-  // However, to make it feel real-time, we can pretend ML is loading up to 45% with a timer if it's not done
   const [simulatedMlProgress, setSimulatedMlProgress] = useState(0);
 
   useEffect(() => {
@@ -217,6 +228,14 @@ function App() {
   // Handlers
   const handleStateChange = useCallback((newState: AppState) => {
     setAppState(newState);
+    
+    // Trigger local "Magic Message" when scattered
+    if (newState === AppState.SCATTERED) {
+      const randomMsg = MAGIC_MESSAGES[Math.floor(Math.random() * MAGIC_MESSAGES.length)];
+      setMagicMessage(randomMsg);
+      // Clear message after 5 seconds
+      setTimeout(() => setMagicMessage(""), 5000);
+    }
   }, []);
 
   const handleHandMove = useCallback((x: number, y: number, z: number) => {
@@ -278,6 +297,15 @@ function App() {
         />
       )}
 
+      {/* Magic Message Overlay */}
+      <div className={`absolute top-1/4 left-0 w-full flex justify-center pointer-events-none transition-opacity duration-1000 ${magicMessage ? 'opacity-100' : 'opacity-0'}`}>
+         <div className="max-w-3xl text-center px-6">
+            <h2 className="text-3xl md:text-5xl font-serif text-amber-300 text-shadow-glow animate-pulse leading-normal">
+              {magicMessage}
+            </h2>
+         </div>
+      </div>
+
       {/* UI Overlay - Only show when started */}
       {hasStarted && (
         <>
@@ -311,7 +339,7 @@ function App() {
                 </div>
                 <div className={`flex items-center gap-3 ${appState === AppState.SCATTERED ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
                   <div className="w-6 h-6 rounded-full border border-current flex items-center justify-center">🖐</div>
-                  <span><span className="text-white">张开五指:</span> 打散粒子 / 旋转视角</span>
+                  <span><span className="text-white">张开五指:</span> 释放魔法祝语</span>
                 </div>
                 <div className={`flex items-center gap-3 ${appState === AppState.PHOTO_VIEW ? 'text-green-400 font-bold' : 'text-gray-400'}`}>
                   <div className="w-6 h-6 rounded-full border border-current flex items-center justify-center">👌</div>
