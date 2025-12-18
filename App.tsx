@@ -46,22 +46,10 @@ const LoadingScreen = ({
   phase2Progress: number;
   hasStarted: boolean;
 }) => {
-  const [displayP1, setDisplayP1] = useState(0);
-  const [displayP2, setDisplayP2] = useState(0);
   const [activePhase, setActivePhase] = useState(1);
   const [transitioning, setTransitioning] = useState(false);
 
-  useEffect(() => {
-    let animFrame: number;
-    const update = () => {
-      setDisplayP1(prev => prev + (phase1Progress - prev) * 0.15);
-      setDisplayP2(prev => prev + (phase2Progress - prev) * 0.15);
-      animFrame = requestAnimationFrame(update);
-    };
-    update();
-    return () => cancelAnimationFrame(animFrame);
-  }, [phase1Progress, phase2Progress]);
-
+  // 当第一阶段接近完成时，切换到第二阶段
   useEffect(() => {
     if (phase1Progress >= 99.9 && activePhase === 1 && !transitioning) {
       setTransitioning(true);
@@ -74,7 +62,7 @@ const LoadingScreen = ({
 
   if (hasStarted) return null;
 
-  const isComplete = isReady && displayP2 > 99;
+  const isComplete = isReady && phase2Progress > 99;
 
   return (
     <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-950/20 via-black to-black">
@@ -90,6 +78,7 @@ const LoadingScreen = ({
         <p className="text-amber-500/40 font-mono text-[10px] tracking-[0.3em] uppercase mb-16">Hand Gesture Magic Experience</p>
         
         <div className="relative w-full h-32 flex items-center justify-center overflow-hidden">
+          {/* Phase 1 Progress Bar */}
           <div 
             className={`absolute w-full transition-all duration-700 ease-in-out ${
               activePhase === 1 && !transitioning 
@@ -101,16 +90,17 @@ const LoadingScreen = ({
               <span className="text-[11px] font-mono text-amber-400 tracking-wider">
                 ● PHASE I: 载入节日记忆
               </span>
-              <span className="text-[11px] font-mono text-gray-500">{Math.round(displayP1)}%</span>
+              <span className="text-[11px] font-mono text-gray-500">{Math.round(phase1Progress)}%</span>
             </div>
-            <div className="h-[2px] w-full bg-gray-900 rounded-full overflow-hidden">
+            <div className="h-1 w-full bg-gray-900 rounded-full overflow-hidden">
                <div 
-                 className="h-full bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)] transition-all duration-300"
-                 style={{ width: `${displayP1}%` }}
+                 className="h-full bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)] transition-all duration-500 ease-out"
+                 style={{ width: `${phase1Progress}%` }}
                />
             </div>
           </div>
 
+          {/* Phase 2 Progress Bar */}
           <div 
             className={`absolute w-full transition-all duration-700 ease-in-out ${
               activePhase === 2 && !isComplete
@@ -122,16 +112,17 @@ const LoadingScreen = ({
               <span className="text-[11px] font-mono text-amber-400 tracking-wider animate-pulse">
                 ● PHASE II: 注入构筑魔法
               </span>
-              <span className="text-[11px] font-mono text-gray-500">{Math.round(displayP2)}%</span>
+              <span className="text-[11px] font-mono text-gray-500">{Math.round(phase2Progress)}%</span>
             </div>
-            <div className="h-[2px] w-full bg-gray-900 rounded-full overflow-hidden">
+            <div className="h-1 w-full bg-gray-900 rounded-full overflow-hidden">
                <div 
-                 className="h-full bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.7)] transition-all duration-300"
-                 style={{ width: `${displayP2}%` }}
+                 className="h-full bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.7)] transition-all duration-500 ease-out"
+                 style={{ width: `${phase2Progress}%` }}
                />
             </div>
           </div>
 
+          {/* Start Button */}
           <div 
             className={`absolute flex flex-col items-center transition-all duration-1000 ease-out ${
               isComplete ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
@@ -160,7 +151,7 @@ const LoadingScreen = ({
 
 function App() {
   const [appState, setAppState] = useState<AppState>(AppState.TREE);
-  const [photos] = useState<string[]>(INITIAL_PHOTOS); // 这里现在是静态的，方便手动修改数组
+  const [photos] = useState<string[]>(INITIAL_PHOTOS); 
   const [hasStarted, setHasStarted] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
@@ -170,6 +161,7 @@ function App() {
   const [phase1Progress, setPhase1Progress] = useState(0);
   const [phase2Progress, setPhase2Progress] = useState(0);
 
+  // Phase 1: Simulated asset loading
   useEffect(() => {
     let current = 0;
     const interval = setInterval(() => {
@@ -185,6 +177,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Initialize MediaPipe when Phase 1 is done
   useEffect(() => {
     if (phase1Progress < 100) return;
     const initMediaPipe = async () => {
@@ -206,11 +199,12 @@ function App() {
     initMediaPipe();
   }, [phase1Progress]);
 
+  // Phase 2: Compute real loading progress (Models + Textures)
   useEffect(() => {
     if (phase1Progress < 100) return;
-    const mlContribution = landmarker ? 40 : 0;
+    const mlContribution = landmarker ? 40 : (landmarker === null ? 0 : 20); // Basic smoothing
     const texContribution = (textureProgress / 100) * 60;
-    setPhase2Progress(mlContribution + texContribution);
+    setPhase2Progress(Math.min(100, mlContribution + texContribution));
   }, [landmarker, textureProgress, phase1Progress]);
 
   const targetHandPosRef = useRef({ x: 0, y: 0, z: 0 });
