@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
@@ -8,13 +9,29 @@
     <style>
       body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #050505; }
       #root { width: 100%; height: 100%; }
-      /* Custom scrollbar for instruction panel */
-      ::-webkit-scrollbar { width: 6px; }
+      
+      ::-webkit-scrollbar { width: 4px; }
       ::-webkit-scrollbar-track { background: transparent; }
-      ::-webkit-scrollbar-thumb { background: rgba(255, 215, 0, 0.3); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb { background: rgba(255, 215, 0, 0.2); border-radius: 2px; }
       
       .text-shadow-glow {
         text-shadow: 0 0 10px rgba(255, 215, 0, 0.7), 0 0 20px rgba(255, 215, 0, 0.5);
+      }
+
+      @keyframes reveal {
+        0% { transform: translateY(100%); opacity: 0; }
+        100% { transform: translateY(0); opacity: 1; }
+      }
+      .animate-reveal {
+        animation: reveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      @keyframes fade-in {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+      .animate-fade-in {
+        animation: fade-in 1s ease-out forwards;
       }
     </style>
 <script type="importmap">

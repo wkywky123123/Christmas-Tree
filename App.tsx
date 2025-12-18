@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useProgress } from '@react-three/drei';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import { Scene } from './components/Scene';
@@ -30,23 +30,41 @@ const LoadingScreen = ({
   isReady, 
   onStart, 
   phase1Progress,
-  phase2Progress,
+  phase2Data,
   hasStarted
 }: { 
   isReady: boolean; 
   onStart: () => void; 
   phase1Progress: number;
-  phase2Progress: number;
+  phase2Data: { progress: number; loaded: number; total: number; item: string };
   hasStarted: boolean;
 }) => {
   const [activePhase, setActivePhase] = useState(1);
   const [transitioning, setTransitioning] = useState(false);
+  const [smoothProgress, setSmoothProgress] = useState(0);
+
+  // 平滑插值进度
+  useEffect(() => {
+    let frame: number;
+    const target = activePhase === 1 ? phase1Progress : phase2Data.progress;
+    const update = () => {
+      setSmoothProgress(prev => {
+        const diff = target - prev;
+        if (Math.abs(diff) < 0.01) return target;
+        return prev + diff * 0.1;
+      });
+      frame = requestAnimationFrame(update);
+    };
+    frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+  }, [phase1Progress, phase2Data.progress, activePhase]);
 
   useEffect(() => {
     if (phase1Progress >= 99.9 && activePhase === 1 && !transitioning) {
       setTransitioning(true);
       setTimeout(() => {
         setActivePhase(2);
+        setSmoothProgress(0); // 重置进度条用于第二阶段
         setTransitioning(false);
       }, 800);
     }
@@ -54,85 +72,116 @@ const LoadingScreen = ({
 
   if (hasStarted) return null;
 
-  const isComplete = isReady && phase2Progress > 99;
+  const isComplete = isReady && phase2Data.progress >= 100;
+
+  // 模拟字节显示 (假设平均每个资源 1.2MB)
+  const estimatedBytes = (phase2Data.progress / 100 * phase2Data.total * 1.2).toFixed(1);
+  const totalBytes = (phase2Data.total * 1.2).toFixed(1);
 
   return (
-    <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-950/20 via-black to-black">
+    <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-950/30 via-black to-black">
       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-amber-500/10 blur-[120px] rounded-full animate-pulse" />
           <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-red-500/10 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
       </div>
 
       <div className="relative z-10 flex flex-col items-center w-full max-w-md">
-        <h1 className="text-5xl md:text-6xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500 mb-2 drop-shadow-[0_0_20px_rgba(255,215,0,0.3)]">
-          魔法圣诞树
-        </h1>
-        <p className="text-amber-500/40 font-mono text-[10px] tracking-[0.3em] uppercase mb-16">Hand Gesture Magic Experience</p>
+        <div className="mb-2 overflow-hidden">
+          <h1 className="text-5xl md:text-6xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500 drop-shadow-[0_0_20px_rgba(255,215,0,0.3)] animate-reveal">
+            魔法圣诞树
+          </h1>
+        </div>
+        <p className="text-amber-500/40 font-mono text-[9px] tracking-[0.4em] uppercase mb-16 opacity-0 animate-fade-in fill-mode-forwards" style={{ animationDelay: '0.5s' }}>
+          Real-time Computer Vision Experience
+        </p>
         
-        <div className="relative w-full h-32 flex items-center justify-center overflow-hidden">
+        <div className="relative w-full h-40 flex items-center justify-center">
+          {/* Phase 1: Engine Init */}
           <div 
             className={`absolute w-full transition-all duration-700 ease-in-out ${
               activePhase === 1 && !transitioning 
-                ? 'opacity-100 translate-y-0' 
-                : 'opacity-0 -translate-y-8 pointer-events-none'
+                ? 'opacity-100 translate-y-0 scale-100' 
+                : 'opacity-0 -translate-y-8 scale-95 pointer-events-none'
             }`}
           >
             <div className="flex justify-between items-end mb-3">
-              <span className="text-[11px] font-mono text-amber-400 tracking-wider">
-                ● PHASE I: 载入节日记忆
+              <span className="text-[10px] font-mono text-amber-400 tracking-widest uppercase">
+                ● [01] 初始化魔法核心
               </span>
-              <span className="text-[11px] font-mono text-gray-500">{Math.round(phase1Progress)}%</span>
+              <span className="text-[10px] font-mono text-gray-500 tabular-nums">
+                {smoothProgress.toFixed(1)}%
+              </span>
             </div>
-            <div className="h-1 w-full bg-gray-900 rounded-full overflow-hidden">
+            <div className="h-[2px] w-full bg-white/5 rounded-full overflow-hidden mb-2">
                <div 
-                 className="h-full bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)] transition-all duration-500 ease-out"
-                 style={{ width: `${phase1Progress}%` }}
+                 className="h-full bg-gradient-to-r from-amber-600 to-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.5)]"
+                 style={{ width: `${smoothProgress}%` }}
                />
+            </div>
+            <div className="text-[9px] font-mono text-gray-600 text-left uppercase tracking-tighter truncate">
+               Booting neural_networks.wasm ...
             </div>
           </div>
 
+          {/* Phase 2: Assets Loading */}
           <div 
             className={`absolute w-full transition-all duration-700 ease-in-out ${
               activePhase === 2 && !isComplete
-                ? 'opacity-100 translate-y-0' 
-                : 'opacity-0 translate-y-8 pointer-events-none'
+                ? 'opacity-100 translate-y-0 scale-100' 
+                : 'opacity-0 translate-y-8 scale-95 pointer-events-none'
             }`}
           >
             <div className="flex justify-between items-end mb-3">
-              <span className="text-[11px] font-mono text-amber-400 tracking-wider animate-pulse">
-                ● PHASE II: 注入构筑魔法
+              <span className="text-[10px] font-mono text-amber-400 tracking-widest uppercase animate-pulse">
+                ● [02] 构筑光影维度
               </span>
-              <span className="text-[11px] font-mono text-gray-500">{Math.round(phase2Progress)}%</span>
+              <span className="text-[10px] font-mono text-gray-500 tabular-nums">
+                {smoothProgress.toFixed(1)}%
+              </span>
             </div>
-            <div className="h-1 w-full bg-gray-900 rounded-full overflow-hidden">
+            <div className="h-[2px] w-full bg-white/5 rounded-full overflow-hidden mb-3">
                <div 
-                 className="h-full bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.7)] transition-all duration-500 ease-out"
-                 style={{ width: `${phase2Progress}%` }}
+                 className="h-full bg-gradient-to-r from-amber-500 via-white to-amber-300 shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                 style={{ width: `${smoothProgress}%` }}
                />
+            </div>
+            <div className="flex justify-between items-start">
+               <div className="text-[9px] font-mono text-amber-500/60 text-left uppercase tracking-tighter w-2/3 truncate">
+                 Loading: {phase2Data.item || 'Preparing buffers...'}
+               </div>
+               <div className="text-[9px] font-mono text-gray-500 tabular-nums text-right">
+                 {phase2Data.loaded} / {phase2Data.total} items ({estimatedBytes} MB)
+               </div>
             </div>
           </div>
 
+          {/* Complete Button */}
           <div 
             className={`absolute flex flex-col items-center transition-all duration-1000 ease-out ${
-              isComplete ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
+              isComplete ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-90 translate-y-4 pointer-events-none'
             }`}
           >
-             <p className="text-gray-400 mb-8 max-w-sm leading-loose text-sm font-light tracking-wide italic">
-              “光影已就绪，魔法在指尖”
+             <p className="text-amber-200/60 mb-8 max-w-sm leading-relaxed text-[11px] font-light tracking-[0.2em] uppercase italic">
+              Magic vision is synchronized
             </p>
             <button 
               onClick={onStart}
-              className="group relative px-14 py-4 bg-transparent border border-amber-500/30 rounded-none overflow-hidden transition-all hover:border-amber-400 hover:shadow-[0_0_50px_rgba(255,215,0,0.25)] active:scale-95"
+              className="group relative px-16 py-4 bg-transparent border border-amber-500/20 rounded-none overflow-hidden transition-all hover:border-amber-400 hover:shadow-[0_0_40px_rgba(255,215,0,0.2)] active:scale-95"
             >
-              <div className="absolute inset-0 bg-amber-500/5 group-hover:bg-amber-500/10 transition-all"></div>
-              <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-amber-500"></div>
-              <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-amber-500"></div>
-              <span className="relative text-amber-400 font-bold tracking-[0.5em] uppercase text-xs flex items-center gap-2">
-                开启魔法
+              <div className="absolute inset-0 bg-amber-500/0 group-hover:bg-amber-500/10 transition-all"></div>
+              <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-amber-400"></div>
+              <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-amber-400"></div>
+              <span className="relative text-amber-400 font-bold tracking-[0.6em] uppercase text-[10px] flex items-center gap-2">
+                步入魔法世界
               </span>
             </button>
           </div>
         </div>
+      </div>
+      
+      {/* Footer Branding */}
+      <div className="absolute bottom-12 text-[8px] font-mono text-gray-800 tracking-[0.8em] uppercase">
+        V 2.5 • Creative Vision Lab
       </div>
     </div>
   );
@@ -147,14 +196,14 @@ function App() {
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
   const [magicMessage, setMagicMessage] = useState<string>("");
   
-  const { progress: textureProgress } = useProgress();
+  const { progress: textureProgress, loaded, total, item } = useProgress();
   const [phase1Progress, setPhase1Progress] = useState(0);
-  const [phase2Progress, setPhase2Progress] = useState(0);
 
+  // Phase 1 Simulation (Engine pre-warm)
   useEffect(() => {
     let current = 0;
     const interval = setInterval(() => {
-      const step = Math.max(0.5, (100 - current) * 0.05);
+      const step = Math.max(0.2, (100 - current) * 0.08);
       current += Math.random() * step;
       if (current >= 100) {
         setPhase1Progress(100);
@@ -162,10 +211,11 @@ function App() {
       } else {
         setPhase1Progress(current);
       }
-    }, 50);
+    }, 40);
     return () => clearInterval(interval);
   }, []);
 
+  // MediaPipe Init
   useEffect(() => {
     if (phase1Progress < 100) return;
     const initMediaPipe = async () => {
@@ -187,11 +237,13 @@ function App() {
     initMediaPipe();
   }, [phase1Progress]);
 
-  useEffect(() => {
-    if (phase1Progress < 100) return;
-    const mlContribution = landmarker ? 40 : (landmarker === null ? 0 : 20);
-    const texContribution = (textureProgress / 100) * 60;
-    setPhase2Progress(Math.min(100, mlContribution + texContribution));
+  // Phase 2 Calculation
+  // Added useMemo to solve the "Cannot find name 'useMemo'" error.
+  const phase2ProgressValue = useMemo(() => {
+    if (phase1Progress < 100) return 0;
+    const mlWeight = landmarker ? 30 : 0;
+    const texWeight = (textureProgress / 100) * 70;
+    return Math.min(100, mlWeight + texWeight);
   }, [landmarker, textureProgress, phase1Progress]);
 
   const targetHandPosRef = useRef({ x: 0, y: 0, z: 0 });
@@ -216,7 +268,6 @@ function App() {
       });
       setCameraStream(stream);
 
-      // Check if user has seen onboarding
       const seenOnboarding = getCookie('magic_onboarding_seen');
       if (!seenOnboarding) {
         setShowOnboarding(true);
@@ -289,13 +340,12 @@ function App() {
         isReady={!!landmarker && textureProgress >= 100} 
         onStart={handleStart}
         phase1Progress={phase1Progress}
-        phase2Progress={phase2Progress}
+        phase2Data={{ progress: phase2ProgressValue, loaded, total, item }}
         hasStarted={hasStarted || showOnboarding}
       />
 
       {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
 
-      {/* --- 主界面大标题 --- */}
       {hasStarted && (
         <div className="absolute top-12 left-0 w-full flex flex-col items-center pointer-events-none z-10 animate-fade-in">
            <h1 className="text-4xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200/80 to-amber-500/80 tracking-widest drop-shadow-[0_0_15px_rgba(255,215,0,0.2)]">
@@ -320,7 +370,6 @@ function App() {
         />
       )}
 
-      {/* --- 魔法祝福信息 --- */}
       <div className={`absolute top-1/3 left-0 w-full flex justify-center pointer-events-none transition-all duration-1000 ${magicMessage ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
         <h2 className="text-2xl md:text-4xl font-serif text-amber-200 drop-shadow-[0_0_15px_rgba(255,215,0,0.5)] italic">
           {magicMessage}
