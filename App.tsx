@@ -63,7 +63,6 @@ const LoadingScreen = ({
       setSmoothProgress(prev => {
         const diff = target - prev;
         if (Math.abs(diff) < 0.1) return target;
-        // 在 Phase 2 时使用更快的跟随速度，提高实时感
         const speed = activePhase === 2 ? 0.2 : 0.1;
         return prev + diff * speed;
       });
@@ -88,7 +87,6 @@ const LoadingScreen = ({
         </p>
         
         <div className="w-full space-y-8">
-          {/* 实时进度条 */}
           <div className="relative">
             <div className="flex justify-between items-end mb-3">
               <span className="text-[10px] font-mono text-amber-400 tracking-widest uppercase">
@@ -104,7 +102,6 @@ const LoadingScreen = ({
             </div>
           </div>
 
-          {/* 加载详情 */}
           <div className="h-8 flex flex-col items-center justify-center">
             {activePhase === 2 && !isComplete && (
               <div className="text-[9px] font-mono text-gray-500 animate-fade-in truncate w-full">
@@ -113,14 +110,12 @@ const LoadingScreen = ({
             )}
           </div>
 
-          {/* 温馨提示：首次加载超长耗时 */}
           <div className="bg-amber-500/5 border border-amber-500/10 p-4 rounded-sm animate-fade-in">
              <p className="text-amber-200/60 text-[10px] leading-relaxed italic">
                温馨提示：首次加载需要同步魔法核心与高精度模型，可能需要 <span className="text-amber-400 font-bold">10分钟以上</span>，请保持页面开启，静待奇迹发生。
              </p>
           </div>
 
-          {/* 开始按钮 */}
           <div className={`transition-all duration-1000 transform ${isComplete ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8 pointer-events-none'}`}>
             <button 
               onClick={onStart} 
@@ -146,10 +141,8 @@ function App() {
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
   const [magicMessage, setMagicMessage] = useState<string>("");
   
-  // Three.js 资源加载进度
   const { progress: textureProgress, loaded, total, item } = useProgress();
   
-  // Phase 1: 模拟引擎启动
   const [phase1Progress, setPhase1Progress] = useState(0);
   useEffect(() => {
     let current = 0;
@@ -165,7 +158,6 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Phase 2: 初始化 MediaPipe 和 纹理加载
   useEffect(() => {
     if (phase1Progress < 100) return;
     const initMediaPipe = async () => {
@@ -182,15 +174,12 @@ function App() {
         setLandmarker(lm);
       } catch (error) { 
         console.error("MediaPipe load error:", error); 
-        // 容错处理：即使模型加载失败，也允许通过（可能会导致手势失效但能看到树）
       }
     };
     initMediaPipe();
   }, [phase1Progress]);
 
-  // 核心：计算 Phase 2 的综合进度
   const combinedPhase2Progress = useMemo(() => {
-    // 纹理进度占 80%，MediaPipe 状态占 20%
     const modelProgress = landmarker ? 100 : 0;
     return (textureProgress * 0.8) + (modelProgress * 0.2);
   }, [textureProgress, landmarker]);
@@ -216,15 +205,32 @@ function App() {
     setHasStarted(true);
   };
 
-  // 手势平滑插值
+  // 手势平滑插值及光标同步更新
   useEffect(() => {
     let rAF = 0;
     const loop = () => {
       const target = targetHandPosRef.current;
       const current = smoothedHandPosRef.current;
+      
+      // 平滑移动计算
       current.x += (target.x - current.x) * 0.15;
       current.y += (target.y - current.y) * 0.15;
       current.z += (target.z - current.z) * 0.15;
+
+      // 重要：同步更新光标 DOM 元素的样式
+      if (cursorRef.current) {
+        // 将归一化坐标 (-1 到 1) 映射到屏幕百分比 (0 到 100)
+        const left = (current.x + 1) * 50;
+        const top = (-current.y + 1) * 50; // Y坐标通常需要反转
+
+        cursorRef.current.style.left = `${left}%`;
+        cursorRef.current.style.top = `${top}%`;
+        
+        // 只有当手部在视野内（非默认0点）时才显示光标
+        const isVisible = Math.abs(current.x) > 0.001 || Math.abs(current.y) > 0.001;
+        cursorRef.current.style.opacity = isVisible ? '1' : '0';
+      }
+
       rAF = requestAnimationFrame(loop);
     };
     loop();
@@ -299,7 +305,12 @@ function App() {
         </div>
       )}
 
-      <div ref={cursorRef} className={`fixed w-8 h-8 rounded-full border border-amber-400/50 pointer-events-none transform -translate-x-1/2 -translate-y-1/2 z-40 transition-transform ${isGrabbing ? 'scale-75 bg-amber-400/20' : 'scale-100'}`} style={{ opacity: 0 }}>
+      {/* 视觉反馈光标 */}
+      <div 
+        ref={cursorRef} 
+        className={`fixed w-8 h-8 rounded-full border border-amber-400/50 pointer-events-none transform -translate-x-1/2 -translate-y-1/2 z-[60] transition-transform duration-200 ${isGrabbing ? 'scale-75 bg-amber-400/20' : 'scale-100'}`} 
+        style={{ opacity: 0 }}
+      >
         <div className="w-1 h-1 bg-amber-400 rounded-full m-auto mt-[14px] animate-ping"></div>
       </div>
     </div>
