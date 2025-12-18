@@ -9,11 +9,14 @@ import { AppState } from './types';
 import { getCookie, setCookie } from './utils/cookies';
 
 const INITIAL_PHOTOS = [
-  "https://picsum.photos/id/10/400/400",
-  "https://picsum.photos/id/15/400/400",
-  "https://picsum.photos/id/20/400/400",
-  "https://picsum.photos/id/25/400/400",
-  "https://picsum.photos/id/30/400/400"
+  "/1.png",
+  "/1.png",
+  "/1.png",
+  "/1.png",
+  "/1.png",
+  "/1.png",
+  "/1.png",
+  "/1.png"
 ];
 
 const MAGIC_MESSAGES = [
