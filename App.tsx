@@ -10,15 +10,9 @@ import { getCookie, setCookie } from './utils/cookies';
 
 // 使用不同比例的测试图：包含 1:1, 16:9, 3:4 等
 const INITIAL_PHOTOS = [
-  "https://picsum.photos/id/1018/800/450", // 16:9
-  "https://picsum.photos/id/1015/600/800", // 3:4
-  "https://picsum.photos/id/1019/1000/1000", // 1:1
-  "https://picsum.photos/id/1020/800/600", // 4:3
-  "https://picsum.photos/id/1021/400/800", // 1:2
-  "https://picsum.photos/id/1022/800/400", // 2:1
-  "https://picsum.photos/id/1025/600/600", // 1:1
   "/1.png",
-  "https://picsum.photos/id/1035/800/533"  // 3:2
+  "/1.png",
+  "/1.png"
 ];
 
 const MAGIC_MESSAGES = [
