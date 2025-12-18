@@ -64,7 +64,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
           >
             <div className="absolute inset-0 bg-amber-500/5 group-hover:bg-amber-500/10" />
             <span className="relative text-amber-400 font-bold tracking-[0.4em] uppercase text-xs">
-              {step < STEPS.length - 1 ? "了解更多" : "步入魔法"}
+              {step < STEPS.length - 1 ? "下一步" : "步入魔法"}
             </span>
           </button>
 

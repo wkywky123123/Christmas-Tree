@@ -299,7 +299,7 @@ function App() {
       {hasStarted && (
         <div className="absolute top-12 left-0 w-full flex flex-col items-center pointer-events-none z-10 animate-fade-in">
            <h1 className="text-4xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200/80 to-amber-500/80 tracking-widest drop-shadow-[0_0_15px_rgba(255,215,0,0.2)]">
-            圣诞魔法
+            魔法圣诞树
           </h1>
           <div className="w-12 h-[1px] bg-amber-500/30 mt-2"></div>
         </div>
