@@ -17,7 +17,7 @@ const INITIAL_PHOTOS = [
   "https://picsum.photos/id/1021/400/800", // 1:2
   "https://picsum.photos/id/1022/800/400", // 2:1
   "https://picsum.photos/id/1025/600/600", // 1:1
-  "/1.png",
+  "public/1.png",
   "https://picsum.photos/id/1035/800/533"  // 3:2
 ];
 
