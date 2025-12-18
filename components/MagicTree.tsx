@@ -1,3 +1,4 @@
+
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useTexture } from '@react-three/drei';
@@ -34,7 +35,7 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
       pos: randomVector(CONFIG.SCATTER_BOUNDS), 
       rot: randomVector(Math.PI),
     })).map((item, i) => {
-      // Safe zone logic for photos (60% bounds)
+      // 粒子散开逻辑
       if (i < photos.length) {
          return {
            pos: randomVector(CONFIG.SCATTER_BOUNDS * 0.6), 
@@ -86,7 +87,6 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
     if (starRef.current) {
       const starScaleBase = appState === AppState.TREE ? 1.5 : 0.5;
       const starPulse = Math.sin(time * 3) * 0.2 + 1;
-      // In tree mode: sit at top. In scattered: float up slightly
       const starY = CONFIG.TREE_HEIGHT / 2 + 1 + (appState === AppState.SCATTERED ? 5 : 0);
       
       starRef.current.position.lerp(new Vector3(0, starY, 0), delta * 2);
@@ -107,7 +107,6 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
       }
 
       const currentPos = new Vector3().lerpVectors(treePos, scatterPos, t);
-      
       const treeRot = new Euler(...data.rotation);
       const scatterRot = new Euler(...scatterPositions[i].rot);
       
@@ -200,7 +199,6 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
         />
       </instancedMesh>
       
-      {/* --- THE STAR --- */}
       <mesh ref={starRef} position={[0, CONFIG.TREE_HEIGHT/2 + 1, 0]}>
         <octahedronGeometry args={[1, 0]} />
         <meshStandardMaterial 
@@ -236,7 +234,6 @@ export const MagicTree: React.FC<MagicTreeProps> = ({
   );
 };
 
-// PhotoMesh using useTexture for Preloading support
 interface PhotoMeshProps {
   src: string;
   index: number;
@@ -244,13 +241,26 @@ interface PhotoMeshProps {
 }
 
 const PhotoMesh: React.FC<PhotoMeshProps> = ({ src, index, setRef }) => {
-  // useTexture is suspense-aware and reports to useProgress
   const texture = useTexture(src);
   
+  // 计算原始宽高比，防止图片拉伸
+  // useTexture 在 Suspense 环境下工作，加载完成后 texture.image 必然存在
+  const aspect = useMemo(() => {
+    if (texture.image) {
+      return texture.image.width / texture.image.height;
+    }
+    return 1;
+  }, [texture]);
+
+  // 以高度 1 为基准计算宽度
+  const width = aspect;
+  const height = 1;
+
   return (
     <group ref={setRef}>
+       {/* 核心照片平面 */}
        <mesh>
-        <planeGeometry args={[1, 1]} />
+        <planeGeometry args={[width, height]} />
         <meshStandardMaterial 
             map={texture} 
             side={2} 
@@ -259,12 +269,14 @@ const PhotoMesh: React.FC<PhotoMeshProps> = ({ src, index, setRef }) => {
             metalness={0.1}
         />
        </mesh>
-       <mesh position={[0,0,-0.05]}>
-         <boxGeometry args={[1.05, 1.05, 0.05]} />
-         <meshStandardMaterial color="#fff" roughness={0.1} metalness={0.5} />
+       {/* 照片白底背板（拍立得效果） */}
+       <mesh position={[0, 0, -0.05]}>
+         <boxGeometry args={[width + 0.1, height + 0.1, 0.05]} />
+         <meshStandardMaterial color="#ffffff" roughness={0.1} metalness={0.3} />
        </mesh>
+       {/* 扩大的透明交互层，使手势更容易捕捉 */}
        <mesh visible={false}>
-         <sphereGeometry args={[1.5]} />
+         <sphereGeometry args={[Math.max(width, height) * 0.8]} />
        </mesh>
     </group>
   );
