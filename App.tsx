@@ -10,15 +10,9 @@ import { getCookie, setCookie } from './utils/cookies';
 
 // 测试图片集：确保即便 1.png 加载失败，也会平滑跳过
 const INITIAL_PHOTOS = [
-  "https://picsum.photos/id/1018/800/450", 
-  "https://picsum.photos/id/1015/600/800", 
-  "https://picsum.photos/id/1019/1000/1000", 
-  "https://picsum.photos/id/1020/800/600", 
-  "https://picsum.photos/id/1021/400/800", 
-  "https://picsum.photos/id/1022/800/400", 
-  "https://picsum.photos/id/1025/600/600", 
-  "1.png", 
-  "https://picsum.photos/id/1035/800/533" 
+  "/1.png",
+  "/1.png",
+  "/1.png"
 ];
 
 const MAGIC_MESSAGES = [
