@@ -65,7 +65,7 @@ const LoadingScreen = ({
 
       <div className="relative z-10 flex flex-col items-center w-full max-w-md">
         <h1 className="text-5xl md:text-6xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500 mb-2 drop-shadow-[0_0_20px_rgba(255,215,0,0.3)]">
-          圣诞魔法
+          魔法圣诞树
         </h1>
         <p className="text-amber-500/40 font-mono text-[10px] tracking-[0.3em] uppercase mb-16">Hand Gesture Magic Experience</p>
         
