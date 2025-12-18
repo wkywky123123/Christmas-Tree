@@ -1,3 +1,4 @@
+
 import { ThreeElements } from '@react-three/fiber';
 
 export enum AppState {
@@ -29,10 +30,20 @@ export interface GestureContextType {
   setActivePhotoIndex: (n: number | null) => void;
 }
 
+// Global augmentation for JSX intrinsic elements used by React Three Fiber
 declare global {
   namespace JSX {
-    interface IntrinsicElements {
+    interface IntrinsicElements extends ThreeElements {
       [elemName: string]: any;
+    }
+  }
+
+  // Augment React.JSX for environments using the modern JSX transform (React 18+)
+  namespace React {
+    namespace JSX {
+      interface IntrinsicElements extends ThreeElements {
+        [elemName: string]: any;
+      }
     }
   }
 }
