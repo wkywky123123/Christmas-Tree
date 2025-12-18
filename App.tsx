@@ -7,12 +7,11 @@ import { HandController } from './components/HandController';
 import { AppState } from './types';
 
 /** 
- * ✨ 在这里修改照片：
- * 1. 如果是网络图片，直接粘贴 URL。
+ * ✨ 这里就是你修改照片的地方：
+ * 1. 如果是网络图片，直接粘贴链接。
  * 2. 如果是本地图片：
- *    - 请在项目根目录创建一个名为 public 的文件夹。
- *    - 将图片（如 me.jpg）放入 public 文件夹。
- *    - 在下方数组中写为 "/me.jpg" (注意斜杠开头)。
+ *    - 在根目录创建 public 文件夹，把图片放进去。
+ *    - 路径写成 "/文件名.jpg"
  */
 const INITIAL_PHOTOS = [
   "https://picsum.photos/id/10/400/400",
@@ -49,7 +48,6 @@ const LoadingScreen = ({
   const [activePhase, setActivePhase] = useState(1);
   const [transitioning, setTransitioning] = useState(false);
 
-  // 当第一阶段接近完成时，切换到第二阶段
   useEffect(() => {
     if (phase1Progress >= 99.9 && activePhase === 1 && !transitioning) {
       setTransitioning(true);
@@ -78,7 +76,6 @@ const LoadingScreen = ({
         <p className="text-amber-500/40 font-mono text-[10px] tracking-[0.3em] uppercase mb-16">Hand Gesture Magic Experience</p>
         
         <div className="relative w-full h-32 flex items-center justify-center overflow-hidden">
-          {/* Phase 1 Progress Bar */}
           <div 
             className={`absolute w-full transition-all duration-700 ease-in-out ${
               activePhase === 1 && !transitioning 
@@ -100,7 +97,6 @@ const LoadingScreen = ({
             </div>
           </div>
 
-          {/* Phase 2 Progress Bar */}
           <div 
             className={`absolute w-full transition-all duration-700 ease-in-out ${
               activePhase === 2 && !isComplete
@@ -122,7 +118,6 @@ const LoadingScreen = ({
             </div>
           </div>
 
-          {/* Start Button */}
           <div 
             className={`absolute flex flex-col items-center transition-all duration-1000 ease-out ${
               isComplete ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
@@ -161,7 +156,6 @@ function App() {
   const [phase1Progress, setPhase1Progress] = useState(0);
   const [phase2Progress, setPhase2Progress] = useState(0);
 
-  // Phase 1: Simulated asset loading
   useEffect(() => {
     let current = 0;
     const interval = setInterval(() => {
@@ -177,7 +171,6 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Initialize MediaPipe when Phase 1 is done
   useEffect(() => {
     if (phase1Progress < 100) return;
     const initMediaPipe = async () => {
@@ -199,10 +192,9 @@ function App() {
     initMediaPipe();
   }, [phase1Progress]);
 
-  // Phase 2: Compute real loading progress (Models + Textures)
   useEffect(() => {
     if (phase1Progress < 100) return;
-    const mlContribution = landmarker ? 40 : (landmarker === null ? 0 : 20); // Basic smoothing
+    const mlContribution = landmarker ? 40 : (landmarker === null ? 0 : 20);
     const texContribution = (textureProgress / 100) * 60;
     setPhase2Progress(Math.min(100, mlContribution + texContribution));
   }, [landmarker, textureProgress, phase1Progress]);
@@ -293,6 +285,16 @@ function App() {
         hasStarted={hasStarted}
       />
 
+      {/* --- 主界面大标题 (常驻并在魔法开启后显示) --- */}
+      {hasStarted && (
+        <div className="absolute top-12 left-0 w-full flex flex-col items-center pointer-events-none z-10 animate-fade-in">
+           <h1 className="text-4xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200/80 to-amber-500/80 tracking-widest drop-shadow-[0_0_15px_rgba(255,215,0,0.2)]">
+            圣诞魔法
+          </h1>
+          <div className="w-12 h-[1px] bg-amber-500/30 mt-2"></div>
+        </div>
+      )}
+
       <Scene 
         appState={appState} 
         photos={photos} 
@@ -308,8 +310,9 @@ function App() {
         />
       )}
 
-      <div className={`absolute top-1/4 left-0 w-full flex justify-center pointer-events-none transition-opacity duration-1000 ${magicMessage ? 'opacity-100' : 'opacity-0'}`}>
-        <h2 className="text-3xl md:text-5xl font-serif text-amber-300 drop-shadow-[0_0_15px_rgba(255,215,0,0.6)] animate-pulse">
+      {/* --- 魔法祝福信息 --- */}
+      <div className={`absolute top-1/3 left-0 w-full flex justify-center pointer-events-none transition-all duration-1000 ${magicMessage ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+        <h2 className="text-2xl md:text-4xl font-serif text-amber-200 drop-shadow-[0_0_15px_rgba(255,215,0,0.5)] italic">
           {magicMessage}
         </h2>
       </div>
