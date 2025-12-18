@@ -8,11 +8,17 @@ import { Onboarding } from './components/Onboarding';
 import { AppState } from './types';
 import { getCookie, setCookie } from './utils/cookies';
 
-// 使用不同比例的测试图：包含 1:1, 16:9, 3:4 等
+// 测试图片集：确保即便 1.png 加载失败，也会平滑跳过
 const INITIAL_PHOTOS = [
-  "/1.png",
-  "/1.png",
-  "/1.png"
+  "https://picsum.photos/id/1018/800/450", 
+  "https://picsum.photos/id/1015/600/800", 
+  "https://picsum.photos/id/1019/1000/1000", 
+  "https://picsum.photos/id/1020/800/600", 
+  "https://picsum.photos/id/1021/400/800", 
+  "https://picsum.photos/id/1022/800/400", 
+  "https://picsum.photos/id/1025/600/600", 
+  "1.png", 
+  "https://picsum.photos/id/1035/800/533" 
 ];
 
 const MAGIC_MESSAGES = [
@@ -29,95 +35,103 @@ const LoadingScreen = ({
   isReady, 
   onStart, 
   phase1Progress,
-  phase2Data,
+  phase2Progress,
+  loadingItem,
+  loadedCount,
+  totalCount,
   hasStarted
 }: { 
   isReady: boolean; 
   onStart: () => void; 
   phase1Progress: number;
-  phase2Data: { progress: number; loaded: number; total: number; item: string };
+  phase2Progress: number;
+  loadingItem: string;
+  loadedCount: number;
+  totalCount: number;
   hasStarted: boolean;
 }) => {
   const [activePhase, setActivePhase] = useState(1);
-  const [transitioning, setTransitioning] = useState(false);
   const [smoothProgress, setSmoothProgress] = useState(0);
 
+  // 核心逻辑：监听阶段切换
+  useEffect(() => {
+    if (phase1Progress >= 100 && activePhase === 1) {
+      setTimeout(() => setActivePhase(2), 500);
+    }
+  }, [phase1Progress, activePhase]);
+
+  // 平滑动画控制：确保进度条丝滑推进
   useEffect(() => {
     let frame: number;
-    const target = activePhase === 1 ? phase1Progress : phase2Data.progress;
+    const target = activePhase === 1 ? phase1Progress : phase2Progress;
+    
     const update = () => {
       setSmoothProgress(prev => {
         const diff = target - prev;
-        if (Math.abs(diff) < 0.01) return target;
-        return prev + diff * 0.1;
+        if (Math.abs(diff) < 0.1) return target;
+        // 在 Phase 2 时使用更快的跟随速度，提高实时感
+        const speed = activePhase === 2 ? 0.2 : 0.1;
+        return prev + diff * speed;
       });
       frame = requestAnimationFrame(update);
     };
     frame = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frame);
-  }, [phase1Progress, phase2Data.progress, activePhase]);
-
-  useEffect(() => {
-    if (phase1Progress >= 99.9 && activePhase === 1 && !transitioning) {
-      setTransitioning(true);
-      setTimeout(() => {
-        setActivePhase(2);
-        setSmoothProgress(0);
-        setTransitioning(false);
-      }, 800);
-    }
-  }, [phase1Progress, activePhase, transitioning]);
+  }, [phase1Progress, phase2Progress, activePhase]);
 
   if (hasStarted) return null;
 
-  const isComplete = isReady && phase2Data.progress >= 100;
-  const estimatedBytes = (phase2Data.progress / 100 * phase2Data.total * 1.2).toFixed(1);
+  const isComplete = isReady && smoothProgress >= 99.9;
 
   return (
     <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-950/30 via-black to-black">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-amber-500/10 blur-[120px] rounded-full animate-pulse" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-red-500/10 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
-      </div>
-
       <div className="relative z-10 flex flex-col items-center w-full max-w-md">
-        <div className="mb-2 overflow-hidden">
-          <h1 className="text-5xl md:text-6xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500 drop-shadow-[0_0_20px_rgba(255,215,0,0.3)] animate-reveal">
-            魔法圣诞树
-          </h1>
-        </div>
-        <p className="text-amber-500/40 font-mono text-[9px] tracking-[0.4em] uppercase mb-16 opacity-0 animate-fade-in" style={{ animationDelay: '0.5s' }}>
+        <h1 className="text-5xl md:text-6xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500 mb-2 animate-reveal">
+          魔法圣诞树
+        </h1>
+        <p className="text-amber-500/40 font-mono text-[9px] tracking-[0.4em] uppercase mb-12">
           Real-time Computer Vision Experience
         </p>
         
-        <div className="relative w-full h-40 flex items-center justify-center">
-          <div className={`absolute w-full transition-all duration-700 ${activePhase === 1 && !transitioning ? 'opacity-100' : 'opacity-0 -translate-y-8 pointer-events-none'}`}>
+        <div className="w-full space-y-8">
+          {/* 实时进度条 */}
+          <div className="relative">
             <div className="flex justify-between items-end mb-3">
-              <span className="text-[10px] font-mono text-amber-400 tracking-widest uppercase">● [01] 初始化核心引擎</span>
+              <span className="text-[10px] font-mono text-amber-400 tracking-widest uppercase">
+                {activePhase === 1 ? "● [01] 引擎初始化" : "● [02] 视觉资产同步"}
+              </span>
               <span className="text-[10px] font-mono text-gray-500">{smoothProgress.toFixed(1)}%</span>
             </div>
-            <div className="h-[2px] w-full bg-white/5 rounded-full overflow-hidden mb-2">
-               <div className="h-full bg-gradient-to-r from-amber-600 to-amber-400" style={{ width: `${smoothProgress}%` }} />
+            <div className="h-[2px] w-full bg-white/5 rounded-full overflow-hidden">
+               <div 
+                 className="h-full bg-gradient-to-r from-amber-600 to-amber-300 transition-all duration-100 ease-out" 
+                 style={{ width: `${smoothProgress}%` }} 
+               />
             </div>
           </div>
 
-          <div className={`absolute w-full transition-all duration-700 ${activePhase === 2 && !isComplete ? 'opacity-100' : 'opacity-0 translate-y-8 pointer-events-none'}`}>
-            <div className="flex justify-between items-end mb-3">
-              <span className="text-[10px] font-mono text-amber-400 tracking-widest uppercase animate-pulse">● [02] 加载视觉资产</span>
-              <span className="text-[10px] font-mono text-gray-500">{smoothProgress.toFixed(1)}%</span>
-            </div>
-            <div className="h-[2px] w-full bg-white/5 rounded-full overflow-hidden mb-3">
-               <div className="h-full bg-gradient-to-r from-amber-500 via-white to-amber-300" style={{ width: `${smoothProgress}%` }} />
-            </div>
-            <div className="flex justify-between text-[9px] font-mono text-gray-500">
-               <div className="truncate w-2/3 text-left">FILE: {phase2Data.item || 'SYNCING...'}</div>
-               <div>{phase2Data.loaded}/{phase2Data.total} ({estimatedBytes}MB)</div>
-            </div>
+          {/* 加载详情 */}
+          <div className="h-8 flex flex-col items-center justify-center">
+            {activePhase === 2 && !isComplete && (
+              <div className="text-[9px] font-mono text-gray-500 animate-fade-in truncate w-full">
+                LOADING: {loadingItem || 'PREPARING ASSETS...'} ({loadedCount}/{totalCount})
+              </div>
+            )}
           </div>
 
-          <div className={`absolute flex flex-col items-center transition-all duration-1000 ${isComplete ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}`}>
-             <p className="text-amber-200/60 mb-8 text-[11px] font-light tracking-[0.2em] uppercase italic">Magic is synchronized</p>
-            <button onClick={onStart} className="group relative px-16 py-4 bg-transparent border border-amber-500/20 hover:border-amber-400 hover:shadow-[0_0_40px_rgba(255,215,0,0.2)] active:scale-95 transition-all">
+          {/* 温馨提示：首次加载超长耗时 */}
+          <div className="bg-amber-500/5 border border-amber-500/10 p-4 rounded-sm animate-fade-in">
+             <p className="text-amber-200/60 text-[10px] leading-relaxed italic">
+               温馨提示：首次加载需要同步魔法核心与高精度模型，可能需要 <span className="text-amber-400 font-bold">10分钟以上</span>，请保持页面开启，静待奇迹发生。
+             </p>
+          </div>
+
+          {/* 开始按钮 */}
+          <div className={`transition-all duration-1000 transform ${isComplete ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8 pointer-events-none'}`}>
+            <button 
+              onClick={onStart} 
+              className="group relative px-16 py-4 bg-transparent border border-amber-500/20 hover:border-amber-400 hover:shadow-[0_0_40px_rgba(255,215,0,0.2)] active:scale-95 transition-all"
+            >
               <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-amber-400"></div>
               <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-amber-400"></div>
               <span className="text-amber-400 font-bold tracking-[0.6em] uppercase text-[10px]">开启魔法</span>
@@ -138,66 +152,68 @@ function App() {
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
   const [magicMessage, setMagicMessage] = useState<string>("");
   
+  // Three.js 资源加载进度
   const { progress: textureProgress, loaded, total, item } = useProgress();
+  
+  // Phase 1: 模拟引擎启动
   const [phase1Progress, setPhase1Progress] = useState(0);
-
   useEffect(() => {
     let current = 0;
     const interval = setInterval(() => {
-      const step = Math.max(0.2, (100 - current) * 0.08);
-      current += Math.random() * step;
+      current += Math.random() * 2;
       if (current >= 100) {
         setPhase1Progress(100);
         clearInterval(interval);
       } else {
         setPhase1Progress(current);
       }
-    }, 40);
+    }, 50);
     return () => clearInterval(interval);
   }, []);
 
+  // Phase 2: 初始化 MediaPipe 和 纹理加载
   useEffect(() => {
     if (phase1Progress < 100) return;
     const initMediaPipe = async () => {
       try {
-        const vision = await FilesetResolver.forVisionTasks("/models/wasm");
+        const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
         const lm = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: "/models/hand_landmarker.task", delegate: "GPU" },
+          baseOptions: { 
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", 
+            delegate: "GPU" 
+          },
           runningMode: "VIDEO",
           numHands: 1
         });
         setLandmarker(lm);
-      } catch (error) { console.error("MediaPipe load error:", error); }
+      } catch (error) { 
+        console.error("MediaPipe load error:", error); 
+        // 容错处理：即使模型加载失败，也允许通过（可能会导致手势失效但能看到树）
+      }
     };
     initMediaPipe();
   }, [phase1Progress]);
 
-  const phase2ProgressValue = useMemo(() => {
-    if (phase1Progress < 100) return 0;
-    const mlWeight = landmarker ? 30 : 0;
-    const texWeight = (textureProgress / 100) * 70;
-    return Math.min(100, mlWeight + texWeight);
-  }, [landmarker, textureProgress, phase1Progress]);
+  // 核心：计算 Phase 2 的综合进度
+  const combinedPhase2Progress = useMemo(() => {
+    // 纹理进度占 80%，MediaPipe 状态占 20%
+    const modelProgress = landmarker ? 100 : 0;
+    return (textureProgress * 0.8) + (modelProgress * 0.2);
+  }, [textureProgress, landmarker]);
 
   const targetHandPosRef = useRef({ x: 0, y: 0, z: 0 });
   const smoothedHandPosRef = useRef({ x: 0, y: 0, z: 0 });
   const cursorRef = useRef<HTMLDivElement>(null);
   const [isGrabbing, setIsGrabbing] = useState(false);
-  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
-
-  useEffect(() => {
-    const checkOrientation = () => setIsMobilePortrait(window.innerHeight > window.innerWidth && window.innerWidth < 768);
-    window.addEventListener('resize', checkOrientation);
-    checkOrientation();
-    return () => window.removeEventListener('resize', checkOrientation);
-  }, []);
 
   const handleStart = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       setCameraStream(stream);
       getCookie('magic_onboarding_seen') ? setHasStarted(true) : setShowOnboarding(true);
-    } catch (err) { alert("摄像头授权失败"); }
+    } catch (err) { 
+      alert("请授权摄像头访问，以体验手势魔法。"); 
+    }
   };
 
   const handleOnboardingComplete = () => {
@@ -206,6 +222,7 @@ function App() {
     setHasStarted(true);
   };
 
+  // 手势平滑插值
   useEffect(() => {
     let rAF = 0;
     const loop = () => {
@@ -214,11 +231,6 @@ function App() {
       current.x += (target.x - current.x) * 0.15;
       current.y += (target.y - current.y) * 0.15;
       current.z += (target.z - current.z) * 0.15;
-      if (cursorRef.current) {
-        cursorRef.current.style.left = `${(current.x + 1) * 50}%`;
-        cursorRef.current.style.top = `${(-current.y + 1) * 50}%`;
-        cursorRef.current.style.opacity = Math.abs(current.x) < 0.001 ? '0' : '1';
-      }
       rAF = requestAnimationFrame(loop);
     };
     loop();
@@ -239,40 +251,63 @@ function App() {
         isReady={!!landmarker && textureProgress >= 100} 
         onStart={handleStart}
         phase1Progress={phase1Progress}
-        phase2Data={{ progress: phase2ProgressValue, loaded, total, item }}
+        phase2Progress={combinedPhase2Progress}
+        loadingItem={item}
+        loadedCount={loaded}
+        totalCount={total}
         hasStarted={hasStarted || showOnboarding}
       />
+      
       {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
+      
       {hasStarted && (
         <div className="absolute top-12 left-0 w-full flex flex-col items-center pointer-events-none z-10">
-           <h1 className="text-4xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200/80 to-amber-500/80 tracking-widest drop-shadow-[0_0_15px_rgba(255,215,0,0.2)] animate-fade-in">魔法圣诞树</h1>
+           <h1 className="text-4xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200/80 to-amber-500/80 tracking-widest animate-fade-in">魔法圣诞树</h1>
            <div className="w-12 h-[1px] bg-amber-500/30 mt-2"></div>
         </div>
       )}
+
       <Scene 
-        appState={appState} photos={photos} handPosRef={smoothedHandPosRef}
-        isGrabbing={isGrabbing} onPhotoSelect={() => appState === AppState.SCATTERED && setAppState(AppState.PHOTO_VIEW)}
+        appState={appState} 
+        photos={photos} 
+        handPosRef={smoothedHandPosRef}
+        isGrabbing={isGrabbing} 
+        onPhotoSelect={(idx) => {
+          if (appState === AppState.SCATTERED) setAppState(AppState.PHOTO_VIEW);
+        }}
       />
+
       {cameraStream && landmarker && hasStarted && (
         <HandController 
-          cameraStream={cameraStream} landmarker={landmarker}
-          onStateChange={handleStateChange} onHandMove={(x,y,z) => targetHandPosRef.current = {x,y,z}} onGrab={(g) => {setIsGrabbing(g); if(!g && appState === AppState.PHOTO_VIEW) setAppState(AppState.SCATTERED)}}
+          cameraStream={cameraStream} 
+          landmarker={landmarker}
+          onStateChange={handleStateChange} 
+          onHandMove={(x,y,z) => targetHandPosRef.current = {x,y,z}} 
+          onGrab={(g) => {
+            setIsGrabbing(g); 
+            if(!g && appState === AppState.PHOTO_VIEW) setAppState(AppState.SCATTERED);
+          }}
         />
       )}
+
       <div className={`absolute top-1/3 left-0 w-full flex justify-center pointer-events-none transition-all duration-1000 ${magicMessage ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
         <h2 className="text-2xl md:text-4xl font-serif text-amber-200 drop-shadow-[0_0_15px_rgba(255,215,0,0.5)] italic">{magicMessage}</h2>
       </div>
+
       {hasStarted && (
         <div className="absolute bottom-8 left-8 bg-black/40 backdrop-blur-xl border-l-2 border-amber-500/50 p-6 max-w-sm animate-fade-in">
            <h3 className="text-amber-400 font-bold uppercase text-[10px] tracking-widest mb-4">手势指南</h3>
            <div className="space-y-4 text-xs font-light">
-                <div className={`flex items-center gap-4 ${appState === AppState.TREE ? 'text-amber-400' : 'text-gray-500'}`}><span>✊</span><span><b>握拳:</b> 聚拢圣诞树</span></div>
+                <div className={`flex items-center gap-4 ${appState === AppState.TREE ? 'text-amber-400' : 'text-gray-500'}`}><span>✊</span><span><b>握拳:</b> 凝聚圣诞树</span></div>
                 <div className={`flex items-center gap-4 ${appState === AppState.SCATTERED ? 'text-amber-400' : 'text-gray-500'}`}><span>🖐</span><span><b>张开:</b> 释放魔法粒子</span></div>
-                <div className={`flex items-center gap-4 ${appState === AppState.PHOTO_VIEW ? 'text-amber-400' : 'text-gray-500'}`}><span>👌</span><span><b>捏合:</b> 捕捉浮动记忆</span></div>
+                <div className={`flex items-center gap-4 ${appState === AppState.PHOTO_VIEW ? 'text-amber-400' : 'text-gray-500'}`}><span>👌</span><span><b>捏合:</b> 捕捉记忆切片</span></div>
            </div>
         </div>
       )}
-      <div ref={cursorRef} className={`fixed w-8 h-8 rounded-full border border-amber-400/50 pointer-events-none transform -translate-x-1/2 -translate-y-1/2 z-40 transition-transform ${isGrabbing ? 'scale-75 bg-amber-400/20' : 'scale-100'}`} style={{ opacity: 0 }}><div className="w-1 h-1 bg-amber-400 rounded-full m-auto mt-[14px] animate-ping"></div></div>
+
+      <div ref={cursorRef} className={`fixed w-8 h-8 rounded-full border border-amber-400/50 pointer-events-none transform -translate-x-1/2 -translate-y-1/2 z-40 transition-transform ${isGrabbing ? 'scale-75 bg-amber-400/20' : 'scale-100'}`} style={{ opacity: 0 }}>
+        <div className="w-1 h-1 bg-amber-400 rounded-full m-auto mt-[14px] animate-ping"></div>
+      </div>
     </div>
   );
 }
