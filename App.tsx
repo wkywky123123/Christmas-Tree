@@ -42,99 +42,125 @@ const LoadingScreen = ({
   const [displayP1, setDisplayP1] = useState(0);
   const [displayP2, setDisplayP2] = useState(0);
   const [activePhase, setActivePhase] = useState(1);
+  const [transitioning, setTransitioning] = useState(false);
 
   // Smooth Interpolation
   useEffect(() => {
     let animFrame: number;
     const update = () => {
-      setDisplayP1(prev => prev + (phase1Progress - prev) * 0.1);
-      setDisplayP2(prev => prev + (phase2Progress - prev) * 0.1);
+      setDisplayP1(prev => prev + (phase1Progress - prev) * 0.15);
+      setDisplayP2(prev => prev + (phase2Progress - prev) * 0.15);
       
-      if (phase1Progress >= 99 && activePhase === 1) {
-        setActivePhase(2);
-      }
       animFrame = requestAnimationFrame(update);
     };
     update();
     return () => cancelAnimationFrame(animFrame);
-  }, [phase1Progress, phase2Progress, activePhase]);
+  }, [phase1Progress, phase2Progress]);
+
+  // Transition Logic: Switch phase when P1 is done
+  useEffect(() => {
+    if (phase1Progress >= 99.9 && activePhase === 1 && !transitioning) {
+      setTransitioning(true);
+      // Brief pause at 100% before switching
+      setTimeout(() => {
+        setActivePhase(2);
+        setTransitioning(false);
+      }, 800);
+    }
+  }, [phase1Progress, activePhase, transitioning]);
 
   if (hasStarted) return null;
 
+  const isComplete = isReady && displayP2 > 99;
+
   return (
     <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-950/20 via-black to-black">
+      {/* Background Glows */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-amber-500/10 blur-[120px] rounded-full animate-pulse" />
           <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-red-500/10 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
       </div>
 
-      <h1 className="text-5xl md:text-6xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500 mb-2 drop-shadow-[0_0_20px_rgba(255,215,0,0.3)]">
-        圣诞魔法
-      </h1>
-      <p className="text-amber-500/40 font-mono text-[10px] tracking-[0.3em] uppercase mb-12">Hand Gesture Magic Experience</p>
-      
-      {!isReady || displayP2 < 99 ? (
-        <div className="w-full max-w-md flex flex-col items-center">
-          {/* Phase 1 Indicator */}
-          <div className="w-full mb-8 relative">
-            <div className="flex justify-between items-end mb-2">
-              <span className={`text-[10px] font-mono transition-colors duration-500 ${activePhase === 1 ? 'text-amber-400' : 'text-gray-600'}`}>
-                {activePhase === 1 ? "● PHASE I: 载入节日记忆" : "✓ PHASE I: 记忆就绪"}
+      <div className="relative z-10 flex flex-col items-center w-full max-w-md">
+        <h1 className="text-5xl md:text-6xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500 mb-2 drop-shadow-[0_0_20px_rgba(255,215,0,0.3)]">
+          圣诞魔法
+        </h1>
+        <p className="text-amber-500/40 font-mono text-[10px] tracking-[0.3em] uppercase mb-16">Hand Gesture Magic Experience</p>
+        
+        <div className="relative w-full h-32 flex items-center justify-center overflow-hidden">
+          {/* Phase 1 Progress */}
+          <div 
+            className={`absolute w-full transition-all duration-700 ease-in-out ${
+              activePhase === 1 && !transitioning 
+                ? 'opacity-100 translate-y-0' 
+                : 'opacity-0 -translate-y-8 pointer-events-none'
+            }`}
+          >
+            <div className="flex justify-between items-end mb-3">
+              <span className="text-[11px] font-mono text-amber-400 tracking-wider">
+                ● PHASE I: 载入节日记忆
               </span>
-              <span className="text-[10px] font-mono text-gray-500">{Math.round(displayP1)}%</span>
+              <span className="text-[11px] font-mono text-gray-500">{Math.round(displayP1)}%</span>
             </div>
             <div className="h-[2px] w-full bg-gray-900 rounded-full overflow-hidden">
                <div 
-                 className={`h-full transition-all duration-300 ${activePhase === 1 ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]' : 'bg-green-500/50'}`}
+                 className="h-full bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)] transition-all duration-300"
                  style={{ width: `${displayP1}%` }}
                />
             </div>
+            <p className="mt-4 text-gray-500 text-[9px] font-mono italic tracking-widest animate-pulse">
+              FETCHING ASSETS & TEXTURES...
+            </p>
           </div>
 
-          {/* Connection Animation */}
-          <div className={`w-0.5 h-8 mb-8 transition-all duration-700 ${activePhase === 2 ? 'bg-gradient-to-b from-green-500 to-amber-500 scale-y-100' : 'bg-gray-800 scale-y-50'}`} />
-
-          {/* Phase 2 Indicator */}
-          <div className="w-full relative">
-            <div className="flex justify-between items-end mb-2">
-              <span className={`text-[10px] font-mono transition-colors duration-500 ${activePhase === 2 ? 'text-amber-400 animate-pulse' : 'text-gray-600'}`}>
-                {activePhase === 2 ? "● PHASE II: 注入构筑魔法" : "WAITING FOR ENGINE..."}
+          {/* Phase 2 Progress */}
+          <div 
+            className={`absolute w-full transition-all duration-700 ease-in-out ${
+              activePhase === 2 && !isComplete
+                ? 'opacity-100 translate-y-0' 
+                : 'opacity-0 translate-y-8 pointer-events-none'
+            }`}
+          >
+            <div className="flex justify-between items-end mb-3">
+              <span className="text-[11px] font-mono text-amber-400 tracking-wider animate-pulse">
+                ● PHASE II: 注入构筑魔法
               </span>
-              <span className="text-[10px] font-mono text-gray-500">{Math.round(displayP2)}%</span>
+              <span className="text-[11px] font-mono text-gray-500">{Math.round(displayP2)}%</span>
             </div>
             <div className="h-[2px] w-full bg-gray-900 rounded-full overflow-hidden">
                <div 
-                 className="h-full bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.6)]"
+                 className="h-full bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.7)] transition-all duration-300"
                  style={{ width: `${displayP2}%` }}
                />
             </div>
+            <p className="mt-4 text-gray-500 text-[9px] font-mono italic tracking-widest animate-pulse">
+              INITIALIZING VISION ENGINE & SHADERS...
+            </p>
           </div>
 
-          <div className="mt-12 h-4">
-             <p className="text-gray-500 text-[9px] font-mono italic tracking-widest animate-fade-in">
-               {activePhase === 1 ? "FETCHING ASSETS & TEXTURES..." : "INITIALIZING VISION ENGINE & SHADERS..."}
-             </p>
+          {/* Start Button Container */}
+          <div 
+            className={`absolute flex flex-col items-center transition-all duration-1000 ease-out ${
+              isComplete ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
+            }`}
+          >
+             <p className="text-gray-400 mb-8 max-w-sm leading-loose text-sm font-light tracking-wide italic">
+              “光影已就绪，魔法在指尖”
+            </p>
+            <button 
+              onClick={onStart}
+              className="group relative px-14 py-4 bg-transparent border border-amber-500/30 rounded-none overflow-hidden transition-all hover:border-amber-400 hover:shadow-[0_0_50px_rgba(255,215,0,0.25)] active:scale-95"
+            >
+              <div className="absolute inset-0 bg-amber-500/5 group-hover:bg-amber-500/10 transition-all"></div>
+              <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-amber-500"></div>
+              <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-amber-500"></div>
+              <span className="relative text-amber-400 font-bold tracking-[0.5em] uppercase text-xs flex items-center gap-2">
+                开启魔法
+              </span>
+            </button>
           </div>
         </div>
-      ) : (
-        <div className="flex flex-col items-center animate-fade-in">
-           <p className="text-gray-400 mb-12 max-w-sm leading-loose text-sm font-light tracking-wide">
-            光影已就绪，魔法在指尖。<br/>
-            请伸出双手，开启这段节日旅程。
-          </p>
-          <button 
-            onClick={onStart}
-            className="group relative px-12 py-4 bg-transparent border border-amber-500/30 rounded-none overflow-hidden transition-all hover:border-amber-400 hover:shadow-[0_0_40px_rgba(255,215,0,0.2)] active:scale-95"
-          >
-            <div className="absolute inset-0 bg-amber-500/5 group-hover:bg-amber-500/10 transition-all"></div>
-            <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-amber-500"></div>
-            <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-amber-500"></div>
-            <span className="relative text-amber-400 font-bold tracking-[0.4em] uppercase text-xs flex items-center gap-2">
-              进入领域
-            </span>
-          </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 };
@@ -152,24 +178,26 @@ function App() {
   const [phase1Progress, setPhase1Progress] = useState(0);
   const [phase2Progress, setPhase2Progress] = useState(0);
 
-  // Phase 1: Miscellaneous (Images, UI, etc.)
+  // Phase 1: Miscellaneous (Simulated light asset load)
   useEffect(() => {
-    let start = 0;
+    let current = 0;
     const interval = setInterval(() => {
-      start += Math.random() * 5;
-      if (start >= 100) {
+      // Fast start, slow end
+      const step = Math.max(0.5, (100 - current) * 0.05);
+      current += Math.random() * step;
+      if (current >= 100) {
         setPhase1Progress(100);
         clearInterval(interval);
       } else {
-        setPhase1Progress(start);
+        setPhase1Progress(current);
       }
-    }, 40);
+    }, 50);
     return () => clearInterval(interval);
   }, []);
 
-  // Phase 2: Engine & Heavy Assets
+  // Phase 2 Initialization (Wait for phase 1)
   useEffect(() => {
-    if (phase1Progress < 90) return; // Wait for phase 1
+    if (phase1Progress < 100) return;
 
     const initMediaPipe = async () => {
       try {
@@ -190,11 +218,10 @@ function App() {
     initMediaPipe();
   }, [phase1Progress]);
 
-  // Phase 2 calculation (MediaPipe + Textures)
+  // Phase 2 calculation (MediaPipe 40% + Textures 60%)
   useEffect(() => {
     if (phase1Progress < 100) return;
     
-    // MediaPipe counts for 40%, Textures count for 60%
     const mlContribution = landmarker ? 40 : 0;
     const texContribution = (textureProgress / 100) * 60;
     setPhase2Progress(mlContribution + texContribution);
@@ -206,7 +233,6 @@ function App() {
   
   const [isGrabbing, setIsGrabbing] = useState(false);
   const [isMobilePortrait, setIsMobilePortrait] = useState(false);
-  const [isInstructionsOpen, setIsInstructionsOpen] = useState(true);
 
   useEffect(() => {
     const checkOrientation = () => {
