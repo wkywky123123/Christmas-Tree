@@ -6,8 +6,11 @@ import { Scene } from './components/Scene';
 import { HandController } from './components/HandController';
 import { AppState } from './types';
 
-// Placeholder images
-const DEFAULT_PHOTOS = [
+/** 
+ * ✨ 修改照片的地方：
+ * 在这里替换数组中的链接即可改变圣诞树上的照片 
+ */
+const INITIAL_PHOTOS = [
   "https://picsum.photos/id/10/400/400",
   "https://picsum.photos/id/15/400/400",
   "https://picsum.photos/id/20/400/400",
@@ -44,24 +47,20 @@ const LoadingScreen = ({
   const [activePhase, setActivePhase] = useState(1);
   const [transitioning, setTransitioning] = useState(false);
 
-  // Smooth Interpolation
   useEffect(() => {
     let animFrame: number;
     const update = () => {
       setDisplayP1(prev => prev + (phase1Progress - prev) * 0.15);
       setDisplayP2(prev => prev + (phase2Progress - prev) * 0.15);
-      
       animFrame = requestAnimationFrame(update);
     };
     update();
     return () => cancelAnimationFrame(animFrame);
   }, [phase1Progress, phase2Progress]);
 
-  // Transition Logic: Switch phase when P1 is done
   useEffect(() => {
     if (phase1Progress >= 99.9 && activePhase === 1 && !transitioning) {
       setTransitioning(true);
-      // Brief pause at 100% before switching
       setTimeout(() => {
         setActivePhase(2);
         setTransitioning(false);
@@ -74,8 +73,7 @@ const LoadingScreen = ({
   const isComplete = isReady && displayP2 > 99;
 
   return (
-    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-950/20 via-black to-black">
-      {/* Background Glows */}
+    <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white p-8 text-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-950/20 via-black to-black">
       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-amber-500/10 blur-[120px] rounded-full animate-pulse" />
           <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-red-500/10 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
@@ -88,7 +86,6 @@ const LoadingScreen = ({
         <p className="text-amber-500/40 font-mono text-[10px] tracking-[0.3em] uppercase mb-16">Hand Gesture Magic Experience</p>
         
         <div className="relative w-full h-32 flex items-center justify-center overflow-hidden">
-          {/* Phase 1 Progress */}
           <div 
             className={`absolute w-full transition-all duration-700 ease-in-out ${
               activePhase === 1 && !transitioning 
@@ -108,12 +105,8 @@ const LoadingScreen = ({
                  style={{ width: `${displayP1}%` }}
                />
             </div>
-            <p className="mt-4 text-gray-500 text-[9px] font-mono italic tracking-widest animate-pulse">
-              FETCHING ASSETS & TEXTURES...
-            </p>
           </div>
 
-          {/* Phase 2 Progress */}
           <div 
             className={`absolute w-full transition-all duration-700 ease-in-out ${
               activePhase === 2 && !isComplete
@@ -133,12 +126,8 @@ const LoadingScreen = ({
                  style={{ width: `${displayP2}%` }}
                />
             </div>
-            <p className="mt-4 text-gray-500 text-[9px] font-mono italic tracking-widest animate-pulse">
-              INITIALIZING VISION ENGINE & SHADERS...
-            </p>
           </div>
 
-          {/* Start Button Container */}
           <div 
             className={`absolute flex flex-col items-center transition-all duration-1000 ease-out ${
               isComplete ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
@@ -167,22 +156,19 @@ const LoadingScreen = ({
 
 function App() {
   const [appState, setAppState] = useState<AppState>(AppState.TREE);
-  const [photos] = useState<string[]>(DEFAULT_PHOTOS);
+  const [photos, setPhotos] = useState<string[]>(INITIAL_PHOTOS);
   const [hasStarted, setHasStarted] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
   const [magicMessage, setMagicMessage] = useState<string>("");
   
-  // Progress Logic
   const { progress: textureProgress } = useProgress();
   const [phase1Progress, setPhase1Progress] = useState(0);
   const [phase2Progress, setPhase2Progress] = useState(0);
 
-  // Phase 1: Miscellaneous (Simulated light asset load)
   useEffect(() => {
     let current = 0;
     const interval = setInterval(() => {
-      // Fast start, slow end
       const step = Math.max(0.5, (100 - current) * 0.05);
       current += Math.random() * step;
       if (current >= 100) {
@@ -195,10 +181,8 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Phase 2 Initialization (Wait for phase 1)
   useEffect(() => {
     if (phase1Progress < 100) return;
-
     const initMediaPipe = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks("/models/wasm");
@@ -218,10 +202,8 @@ function App() {
     initMediaPipe();
   }, [phase1Progress]);
 
-  // Phase 2 calculation (MediaPipe 40% + Textures 60%)
   useEffect(() => {
     if (phase1Progress < 100) return;
-    
     const mlContribution = landmarker ? 40 : 0;
     const texContribution = (textureProgress / 100) * 60;
     setPhase2Progress(mlContribution + texContribution);
@@ -230,7 +212,6 @@ function App() {
   const targetHandPosRef = useRef({ x: 0, y: 0, z: 0 });
   const smoothedHandPosRef = useRef({ x: 0, y: 0, z: 0 });
   const cursorRef = useRef<HTMLDivElement>(null);
-  
   const [isGrabbing, setIsGrabbing] = useState(false);
   const [isMobilePortrait, setIsMobilePortrait] = useState(false);
 
