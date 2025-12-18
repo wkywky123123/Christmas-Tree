@@ -7,8 +7,12 @@ import { HandController } from './components/HandController';
 import { AppState } from './types';
 
 /** 
- * ✨ 修改照片的地方：
- * 在这里替换数组中的链接即可改变圣诞树上的照片 
+ * ✨ 在这里修改照片：
+ * 1. 如果是网络图片，直接粘贴 URL。
+ * 2. 如果是本地图片：
+ *    - 请在项目根目录创建一个名为 public 的文件夹。
+ *    - 将图片（如 me.jpg）放入 public 文件夹。
+ *    - 在下方数组中写为 "/me.jpg" (注意斜杠开头)。
  */
 const INITIAL_PHOTOS = [
   "https://picsum.photos/id/10/400/400",
@@ -156,7 +160,7 @@ const LoadingScreen = ({
 
 function App() {
   const [appState, setAppState] = useState<AppState>(AppState.TREE);
-  const [photos, setPhotos] = useState<string[]>(INITIAL_PHOTOS);
+  const [photos] = useState<string[]>(INITIAL_PHOTOS); // 这里现在是静态的，方便手动修改数组
   const [hasStarted, setHasStarted] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
