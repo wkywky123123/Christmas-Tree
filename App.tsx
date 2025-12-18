@@ -4,15 +4,10 @@ import { useProgress } from '@react-three/drei';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import { Scene } from './components/Scene';
 import { HandController } from './components/HandController';
+import { Onboarding } from './components/Onboarding';
 import { AppState } from './types';
+import { getCookie, setCookie } from './utils/cookies';
 
-/** 
- * ✨ 这里就是你修改照片的地方：
- * 1. 如果是网络图片，直接粘贴链接。
- * 2. 如果是本地图片：
- *    - 在根目录创建 public 文件夹，把图片放进去。
- *    - 路径写成 "/文件名.jpg"
- */
 const INITIAL_PHOTOS = [
   "https://picsum.photos/id/10/400/400",
   "https://picsum.photos/id/15/400/400",
@@ -31,7 +26,6 @@ const MAGIC_MESSAGES = [
   "🦌 快乐如驯鹿般奔跑而来 🦌"
 ];
 
-// --- LOADING SCREEN COMPONENT ---
 const LoadingScreen = ({ 
   isReady, 
   onStart, 
@@ -148,6 +142,7 @@ function App() {
   const [appState, setAppState] = useState<AppState>(AppState.TREE);
   const [photos] = useState<string[]>(INITIAL_PHOTOS); 
   const [hasStarted, setHasStarted] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [landmarker, setLandmarker] = useState<HandLandmarker | null>(null);
   const [magicMessage, setMagicMessage] = useState<string>("");
@@ -220,10 +215,23 @@ function App() {
         video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" } 
       });
       setCameraStream(stream);
-      setHasStarted(true);
+
+      // Check if user has seen onboarding
+      const seenOnboarding = getCookie('magic_onboarding_seen');
+      if (!seenOnboarding) {
+        setShowOnboarding(true);
+      } else {
+        setHasStarted(true);
+      }
     } catch (err) {
       alert("无法访问摄像头。请确保授予权限。");
     }
+  };
+
+  const handleOnboardingComplete = () => {
+    setCookie('magic_onboarding_seen', 'true', 365);
+    setShowOnboarding(false);
+    setHasStarted(true);
   };
 
   useEffect(() => {
@@ -282,10 +290,12 @@ function App() {
         onStart={handleStart}
         phase1Progress={phase1Progress}
         phase2Progress={phase2Progress}
-        hasStarted={hasStarted}
+        hasStarted={hasStarted || showOnboarding}
       />
 
-      {/* --- 主界面大标题 (常驻并在魔法开启后显示) --- */}
+      {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
+
+      {/* --- 主界面大标题 --- */}
       {hasStarted && (
         <div className="absolute top-12 left-0 w-full flex flex-col items-center pointer-events-none z-10 animate-fade-in">
            <h1 className="text-4xl font-serif text-transparent bg-clip-text bg-gradient-to-b from-amber-200/80 to-amber-500/80 tracking-widest drop-shadow-[0_0_15px_rgba(255,215,0,0.2)]">
@@ -303,7 +313,7 @@ function App() {
         onPhotoSelect={() => appState === AppState.SCATTERED && setAppState(AppState.PHOTO_VIEW)}
       />
 
-      {cameraStream && landmarker && (
+      {cameraStream && landmarker && hasStarted && (
         <HandController 
           cameraStream={cameraStream} landmarker={landmarker}
           onStateChange={handleStateChange} onHandMove={handleHandMove} onGrab={handleGrab}
