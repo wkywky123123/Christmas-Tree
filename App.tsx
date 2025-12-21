@@ -8,13 +8,15 @@ import { Onboarding } from './components/Onboarding';
 import { AppState } from './types';
 import { getCookie, setCookie } from './utils/cookies';
 
-// 测试图片集：确保即便 1.png 加载失败，也会平滑跳过
+// 图片集，图片放在public文件夹下，直接引用/[你想引用的图片]
+// 图片可以多次重复引用，引用几次就显示几个
 const INITIAL_PHOTOS = [
   "/1.png",
   "/1.png",
   "/1.png"
 ];
 
+//张开手掌之后的祝福语
 const MAGIC_MESSAGES = [
   "✨ 愿你的圣诞充满奇迹与光芒 ✨",
   "🎄 温暖、爱与和平常伴你左右 🎄",
